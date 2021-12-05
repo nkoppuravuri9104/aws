@@ -1,0 +1,1416 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Conditions": {
+        "EmptyKey": {
+            "Fn::Equals": [
+                {
+                    "Ref": "KeyName"
+                },
+                ""
+            ]
+        },
+        "NotCi": {
+            "Fn::Equals": [
+                {
+                    "Ref": "CiPrefix"
+                },
+                ""
+            ]
+        }
+    },
+    "Description": "Create an AEM Environment",
+    "Parameters": {
+        "AccountName": {
+            "Description": "Friendly Names of the AWS Account",
+            "Type": "String"
+        },
+        "AMIPrefix": {
+            "Description": "AMI (Operating System images) name prefix to identify AMI ID",
+            "Type": "String"
+        },
+        "AccessUserName": {
+            "Description": "Access USER ID for logging in and escalated privilege",
+            "Type": "String"
+        },
+        "ASGMinSize": {
+            "Description": "Minimum Number of Instances to Run",
+            "Type": "String"
+        },
+        "ASGMaxSize": {
+            "Description": "Maximum Number of Instances to Run",
+            "Type": "String"
+        },
+        "ASGDesireSize": {
+            "Description": "Desired Number of Instances to Run",
+            "Type": "String"
+        },
+        "BaseSgName": {
+            "Description": "Name of Base Sg to lookup ie LinuxBaseSg or WindowsBaseSg",
+            "Type": "String"
+        },
+        "BucketName": {
+            "Description": "Name of the build bucket",
+            "Type": "String"
+        },
+        "AssetsBucketName" : {
+            "Description": "Name of the assets bucket in the MicroAccount",
+            "Type": "String"
+        },
+        "Prefix": {
+            "Description": "A Prefix for Uniqueness",
+            "Type": "String"
+        },
+        "CiPrefix": {
+            "Description": "Parent Stack Name",
+            "Type": "String"
+        },
+        "Description": {
+            "Description": "Generic Desscrition variable to sprinkle comments throughout the code",
+            "Type": "String"
+        },
+        "DnsHostedZoneName": {
+            "Description": "HostedZone name to create DNS record in",
+            "Type": "String"
+        },
+        "InstanceType": {
+            "ConstraintDescription": "must be a valid EC2 instance type.",
+            "Description": "Amazon EC2 instance types",
+            "Type": "String"
+        },
+        "KeyName": {
+            "Description": "Name of an existing EC2 Keypair. Any empty string will create the instance with no keypair.",
+            "Type": "String"
+        },
+        "LocalDriveSize": {
+            "Description": "Root or C Drive size in GBs",
+            "Type": "Number"
+        },
+        "TargetSubnetName": {
+            "Description": "The Subnet in which to create the EC2 Instances",
+            "Type": "String"
+        },
+        "ParentStackName": {
+            "Description": "Parent Stack Name",
+            "Type": "String"
+        },
+        "AppInstallScript": {
+            "Description": "Installation Script",
+            "Type": "String"
+        },
+        "InstanceTagName": {
+            "Description": "Tag Name",
+            "Type": "String"
+        },
+        "LogGroupName": {
+            "Description": "Log Group Name",
+            "Type": "String"
+        },
+        "Appsg": {
+            "Description": "Security Groups Name",
+            "Type": "String"
+        },
+        "ArtifactoryUrl": {
+            "Description": "The Artifactory url for JDK download",
+            "Type": "String"
+        },
+        "AEMVersion": {
+            "Description": "AEM Version to download from Artifactory",
+            "Type": "String"
+        },
+        "AEMSPVersion": {
+            "Description": "AEM Service Pack Version to download from Artifactory",
+            "Type": "String"
+        },
+        "JDKVersion": {
+            "Description": "Java JDK Version to download from Artifactory",
+            "Type": "String"
+        },
+        "RandomValue": {
+            "Description": "Random string value provided by Bamboo that will always be different on every CloudFormation actions",
+            "Type": "String"
+        },
+		"Runmode": {
+            "Description": "Capturing the Line of business & Environment for runmode",
+            "Type": "String"
+        },
+        "ListenerPort": {
+            "Description": "The port for the ALB Listener",
+            "Type": "String"
+        },
+        "MicroAccount" : {
+            "Description": "AWS Account number where CloudFront is setup for assets bucket",
+            "Type": "String"
+        },
+        "CFInvalidationRole" : {
+            "Description": "Role Name which provides access to perform Cache Invalidation",
+            "Type": "String"
+        },
+        "NLBAccessLogS3" : {
+            "Description": "S3 Bucket location to capture the Network Load Balancer Access Logs",
+            "Type": "String"
+        },
+        "LifecycleHookName": {
+            "Type": "String",
+            "Default": "aem-backup-hook",
+            "Description": "The name of the LifecycleHook"
+        },
+        "HeartbeatTimeout": {
+            "Type": "String",
+            "Default": "1800",
+            "Description": "HeartbeatTimeout timeout in seconds"
+        },
+        "CloudWatchEventName": {
+            "Type": "String",
+            "Description": "The name of the CloudWatch Event Rule"
+        },
+        "CloudWatchEventDescription": {
+            "Type": "String",
+            "Default": "CloudWatch Event rule that will trigger AWS Systems Manager Automation document when an instance go in Terminate:wait"
+        }
+    },
+    "Resources": {
+        "AEMCloudWatchEventRole": {
+            "Condition" : "NotCi",
+            "Type": "AWS::IAM::Role",
+            "DependsOn" : "AEMAutoScalingGroup",
+            "Properties": {
+               "AssumeRolePolicyDocument": {
+                   "Version": "2012-10-17",
+                   "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                   "events.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Policies": [
+                    {
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "ssm:StartAutomationExecution"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Sub": "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/${SSMAutomationDocument}:$DEFAULT"
+                                    }
+                                }
+                            ]
+                        },
+                        "PolicyName": "AEM-SSM-Automation-Policy"
+                    },
+                    {
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "iam:PassRole"
+                                    ],
+                                    "Resource": {
+                                        "Fn::GetAtt": [
+                                            "AEMSSMAutomationAssumeRole",
+                                            "Arn"
+                                        ]
+                                    }
+                                }
+                            ]
+                        },
+                        "PolicyName": "AEM-Pass-Role-SSM-Automation-Policy"
+                    }
+                ]
+            }
+        },
+        "AEMSSMAutomationAssumeRole": {
+            "Condition" : "NotCi",
+            "Type": "AWS::IAM::Role",
+            "DependsOn" : "AEMAutoScalingGroup",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ssm.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "ManagedPolicyArns": [
+                    "arn:aws:iam::aws:policy/service-role/AmazonSSMAutomationRole"
+                ],
+                "Policies": [
+                    {
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "ssm:DescribeInstanceInformation",
+                                        "ssm:ListCommands",
+                                        "ssm:ListCommandInvocations"
+                                    ],
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "ssm:SendCommand"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Sub": "arn:${AWS::Partition}:ssm:${AWS::Region}::document/AWS-RunShellScript"
+                                    }
+                                },
+                                {
+                                    "Action": [
+                                        "ssm:SendCommand"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Sub": "arn:${AWS::Partition}:ec2:*:*:instance/*"
+                                    },
+                                    "Effect": "Allow"
+                                }
+                            ]
+                        },
+                        "PolicyName": "AEM-SSM-Automation-Policy"
+                    },
+                    {
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "autoscaling:CompleteLifecycleAction"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Sub": "arn:${AWS::Partition}:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/${AEMAutoScalingGroup}"
+                                    }
+                                }
+                            ]
+                        },
+                        "PolicyName": "AEM-SSM-Automation-Permission-to-CompleteLifecycle-Policy"
+                    }
+                ]
+            }
+        },
+        "CreateLifeCycleHook": {
+            "Type": "AWS::AutoScaling::LifecycleHook",
+            "DependsOn" : "AEMAutoScalingGroup",
+            "Properties": {
+                "AutoScalingGroupName": {
+                    "Ref": "AEMAutoScalingGroup"
+                },
+                "DefaultResult": "CONTINUE",
+                "HeartbeatTimeout": {
+                    "Ref": "HeartbeatTimeout"
+                },
+                "LifecycleHookName": {
+                    "Ref": "LifecycleHookName"
+                },
+                "LifecycleTransition": "autoscaling:EC2_INSTANCE_TERMINATING"
+            }
+        },
+        "SSMAutomationDocument": {
+            "Condition" : "NotCi",
+            "Type": "AWS::SSM::Document",
+            "DependsOn" : "AEMAutoScalingGroup",
+            "Properties": {
+                "DocumentType": "Automation",
+                "Content": {
+                    "schemaVersion": "0.3",
+                    "assumeRole": "{{AutomationAssumeRole}}",
+                    "description": "This document will run shell script to take backups in ec2 instances before termination",
+                    "parameters": {
+                        "InstanceId": {
+                            "type": "String"
+                        },
+                        "ASGName": {
+                            "type": "String",
+                            "default": {
+                                "Ref": "AEMAutoScalingGroup"
+                            },
+                            "description": "The name of the AutoScaling Group."
+                        },
+                        "LCHName": {
+                            "type": "String",
+                            "default": {
+                                "Ref": "LifecycleHookName"
+                            },
+                            "description": "The name of the Life Cycle Hook."
+                        },
+                        "AutomationAssumeRole": {
+                            "type": "String",
+                            "default": {
+                                "Fn::GetAtt": [
+                                    "AEMSSMAutomationAssumeRole",
+                                    "Arn"
+                                ]
+                            },
+                            "description": "The ARN of the role that allows Automation to perform the actions on your behalf."
+                        }
+                    },
+                    "mainSteps": [
+                        {
+                            "name": "RunCommand",
+                            "action": "aws:runCommand",
+                            "inputs": {
+                                "DocumentName": "AWS-RunShellScript",
+                                "InstanceIds": [
+                                    "{{ InstanceId }}"
+                                ],
+                                "Parameters": {
+                                    "executionTimeout": "1800",
+                                    "commands": [ " scripts=( /opt/adobe/scripts/do_publish_backups.sh /opt/adobe/scripts/do_preview_backups.sh /opt/adobe/scripts/do_author_backups.sh ); for script in ${scripts[@]}; do if [ -f $script ]; then sh $script ; fi; done " ]
+                                }
+                            }
+                        },
+                        {
+                            "name": "TerminateTheInstance",
+                            "action": "aws:executeAwsApi",
+                            "inputs": {
+                                "Service": "autoscaling",
+                                "Api": "CompleteLifecycleAction",
+                                "AutoScalingGroupName": "{{ ASGName }}",
+                                "InstanceId": "{{ InstanceId }}",
+                                "LifecycleActionResult": "CONTINUE",
+                                "LifecycleHookName": "{{ LCHName }}"
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        "CreateCloudWatchEvent": {
+            "Condition" : "NotCi",
+            "Type": "AWS::Events::Rule",
+            "DependsOn" : "AEMAutoScalingGroup",
+            "Properties": {
+                "Description": {
+                    "Ref": "CloudWatchEventDescription"
+                },
+                "EventPattern": {
+                    "source": [
+                        "aws.autoscaling"
+                    ],
+                    "detail-type": [
+                        "EC2 Instance-terminate Lifecycle Action"
+                    ],
+                    "detail": {
+                        "AutoScalingGroupName": [
+                            {
+                                "Ref": "AEMAutoScalingGroup"
+                            }
+                        ]
+                    }
+                },
+                "Name": {
+                   "Ref": "CloudWatchEventName"
+                },
+                "Targets": [
+                    {
+                        "Arn": {
+                            "Fn::Sub": "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/${SSMAutomationDocument}:$DEFAULT"
+                        },
+                        "RoleArn": {
+                            "Fn::GetAtt": [
+                                "AEMCloudWatchEventRole",
+                                "Arn"
+                            ]
+                        },
+                        "Id": "TargetFunctionV1",
+                        "InputTransformer": {
+                            "InputPathsMap": {
+                                "instanceid": "$.detail.EC2InstanceId"
+                            },
+                             "InputTemplate": {
+                                 "Fn::Join": [
+                                    "",
+                                    [
+                                        "{\"InstanceId\":[<instanceid>]}"
+                                    ]
+                                ]
+                            }
+                        }
+                    }
+                ]
+            }
+        },   
+        "AcmDomainValidator": {
+            "Type": "Custom::AcmDomainValidator",
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::Join": [
+                        ":",
+                        [
+                            "arn:aws:lambda",
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            {
+                                "Ref": "AWS::AccountId"
+                            },
+                            "function:AcmDomainValidator"
+                        ]
+                    ]
+                },
+                "DomainName": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            {
+                                "Ref": "CiPrefix"
+                            },
+                            {
+                                "Ref": "Prefix"
+                            },
+                            ".",
+                            {
+                                "Ref": "DnsHostedZoneName"
+                            }
+                        ]
+                    ]
+                },
+                "HostedZoneId": {
+                    "Fn::GetAtt": [
+                        "Route53ZoneInfo",
+                        "ZoneId"
+                    ]
+                },
+                "Region": {
+                    "Ref": "AWS::Region"
+                },
+                "Await": true
+            }
+        },
+        "Route53ZoneInfo": {
+            "Properties": {
+                "DomainName": {
+                    "Ref": "DnsHostedZoneName"
+                },
+                "PrivateZone": "true",
+                "ServiceToken": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "arn:aws:lambda:",
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            ":",
+                            {
+                                "Ref": "AWS::AccountId"
+                            },
+                            ":function:Route53ZoneLookup"
+                        ]
+                    ]
+                }
+            },
+            "Type": "Custom::Route53ZoneInfo"
+        },
+        "AlbSG": {
+            "Properties": {
+                "GroupDescription": "AEM ALB Security Group",
+                "SecurityGroupEgress": [
+                    {
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": {
+                            "Ref": "ListenerPort"
+                        },
+                        "IpProtocol": "TCP",
+                        "ToPort": {
+                            "Ref": "ListenerPort"
+                        }
+                    }
+                ],
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "443",
+                        "IpProtocol": "tcp",
+                        "ToPort": "443"
+                    },
+					{
+                        "CidrIp": "100.0.0.0/8",
+                        "FromPort": "443",
+                        "IpProtocol": "tcp",
+                        "ToPort": "443"
+                    }
+                ],
+                "VpcId": {
+                    "Fn::GetAtt": [
+                        "VpcId",
+                        "VpcId"
+                    ]
+                }
+            },
+            "Type": "AWS::EC2::SecurityGroup"
+        },
+        "InboundRule": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "IpProtocol": "tcp",
+                "FromPort": {
+                    "Ref": "ListenerPort"
+                },
+                "ToPort": {
+                    "Ref": "ListenerPort"
+                },
+                "SourceSecurityGroupId": {
+                    "Fn::GetAtt": [
+                        "AlbSG",
+                        "GroupId"
+                    ]
+                },
+                "GroupId": {
+                    "Ref": "Appsg"
+                }
+            }
+        },
+        "NLBListener": {
+            "Type": "AWS::ElasticLoadBalancingV2::Listener",
+            "Properties": {
+                "DefaultActions": [
+                    {
+                        "Type": "forward",
+                        "TargetGroupArn": {
+                            "Ref": "NLBTargetGroup"
+                        }
+                    }
+                ],
+                "LoadBalancerArn": {
+                    "Ref": "NetworkLoadBalancer"
+                },
+                "Certificates": [
+                    {
+                        "CertificateArn": {
+                            "Fn::GetAtt": [
+                                "AcmDomainValidator",
+                                "CertificateArn"
+                            ]
+                        }
+                    }
+                ],
+                "Port": "443",
+                "Protocol": "HTTPS"
+            }
+        },
+        "NetworkLoadBalancer": {
+            "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+            "Properties": {
+                "Subnets": {
+                    "Fn::GetAtt": [
+                        "SubnetInfo",
+                        "SubnetIds"
+                    ]
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "AlbSG"
+                    }
+                ],
+                "Scheme": "internal",
+                "LoadBalancerAttributes": [
+                    {
+                        "Key": "access_logs.s3.enabled",
+                        "Value": "true"
+                    },
+                    {
+                        "Key": "access_logs.s3.bucket",
+                        "Value": { "Ref": "NLBAccessLogS3" }
+                    }
+                ]
+            }
+        },
+        "NLBTargetGroup": {
+            "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+            "Properties": {
+                "HealthCheckIntervalSeconds": 10,
+                "HealthyThresholdCount": 3,
+                "UnhealthyThresholdCount": 3,
+                "Port": {
+                    "Ref": "ListenerPort"
+                },
+                "Protocol": "HTTPS",
+                "VpcId": {
+                    "Fn::GetAtt": [
+                        "VpcId",
+                        "VpcId"
+                    ]
+                },
+                "TargetGroupAttributes": [
+                    {
+                        "Key": "deregistration_delay.timeout_seconds",
+                        "Value": 60
+                    }
+                ]
+            }
+        },
+        "AEMDNS": {
+            "DependsOn": "AEMLaunchConfig",
+            "Properties": {
+                "HostedZoneId": {
+                    "Fn::GetAtt": [
+                        "Route53ZoneInfo",
+                        "ZoneId"
+                    ]
+                },
+                "Name": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            {
+                                "Ref": "CiPrefix"
+                            },
+                            {
+                                "Ref": "Prefix"
+                            },
+                            ".",
+                            {
+                                "Ref": "DnsHostedZoneName"
+                            }
+                        ]
+                    ]
+                },
+                "AliasTarget": {
+                    "DNSName": {
+                        "Fn::GetAtt": [
+                            "NetworkLoadBalancer",
+                            "DNSName"
+                        ]
+                    },
+                    "HostedZoneId": {
+                        "Fn::GetAtt": [
+                            "NetworkLoadBalancer",
+                            "CanonicalHostedZoneID"
+                        ]
+                    }
+                },
+                "Type": "A"
+            },
+            "Type": "AWS::Route53::RecordSet"
+        },
+        "AmiInfo": {
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "arn:aws:lambda:",
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            ":",
+                            {
+                                "Ref": "AWS::AccountId"
+                            },
+                            ":function:AmiLookup"
+                        ]
+                    ]
+                },
+                "Prefix": {
+                    "Ref": "AMIPrefix"
+                },
+                "RandomTriggerValue": {
+                    "Ref": "RandomValue"
+                }
+            },
+            "Type": "Custom::AmiLookup"
+        },
+        "AEMAutoScalingGroup": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "VPCZoneIdentifier": [
+                    {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Fn::GetAtt": [
+                                    "SubnetInfo",
+                                    "SubnetIds"
+                                ]
+                            }
+                        ]
+                    }
+                ],
+                "LaunchConfigurationName": {
+                    "Ref": "AEMLaunchConfig"
+                },
+                "MinSize": { "Ref": "ASGMinSize" },
+                "MaxSize": { "Ref": "ASGMaxSize" },
+                "DesiredCapacity": { "Ref": "ASGDesireSize" },
+                "TargetGroupARNs": [
+                    {
+                        "Ref": "NLBTargetGroup"
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    {
+                                        "Ref": "InstanceTagName"
+                                    }
+                                ]
+                            ]
+                        },
+                        "PropagateAtLaunch": "true"
+                    }
+                ]
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Count": 1,
+                    "Timeout": "PT60M"
+                }
+            }
+        },
+        "AEMLaunchConfig": {
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "InitialSetup": {
+                        "commands": {
+                            "01_basedir": {
+                                "command": "mkdir -p /export/home /cm/AEM"
+                            },
+                            "02_access_conf": {
+                                "command": "sed -i \"/-:ALL:ALL/i +:$VGUSERNAME:ALL\" /etc/security/access.conf",
+                                "env": {
+                                    "VGUSERNAME": {
+                                        "Ref": "AccessUserName"
+                                    }
+                                }
+                            },
+                            "03_sudo": {
+                                "command": "VGUSER=${VGUSER,,} ;echo $VGUSER |awk -F, '{ for (i=1;i<=NF; i++) print \"\\\"\"$i\"\\\"  ALL=(ALL) PASSWD: ALL\" >> \"/etc/sudoers\" }'",
+                                "env": {
+                                    "VGUSER": {
+                                        "Ref": "AccessUserName"
+                                    }
+                                }
+                            },
+                            "04_download_jdk": {
+                                "command":{
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                        "curl -o ",
+                                        {
+                                            "Ref": "JDKVersion"
+                                        },
+                                        " ",
+                                        {
+                                            "Ref": "ArtifactoryUrl"
+                                        },
+                                        "/java/oracle/",
+                                        {
+                                            "Ref": "JDKVersion"
+                                        }
+                                    ]
+                                ]
+                                }
+                            },
+                            "04.1_download_svr_pack": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                        "curl -o ",
+                                        {
+                                            "Ref": "AEMSPVersion"
+                                        },
+                                        " ",
+                                        {
+                                            "Ref": "ArtifactoryUrl"
+                                        },
+                                        "/aem/",
+                                        {
+                                            "Ref": "AEMSPVersion"
+                                        }
+                                    ]
+                                ]
+                                }
+                            },
+                            "05_download_svrp_jar": {
+                                "command":{
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                        "curl -o ",
+                                        {
+                                            "Ref": "AEMVersion"
+                                        },
+                                        " ",
+                                        {
+                                            "Ref": "ArtifactoryUrl"
+                                        },
+                                        "/aem/",
+                                        {
+                                            "Ref": "AEMVersion"
+                                        }
+                                    ]
+                                ]
+                                }
+                            }
+                        }
+                    },
+                            "AppInstall": {
+                                "commands": {
+                                    "01_download_froms3": {
+                                        "command": {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "aws s3 cp s3://",
+                                                    {
+                                                        "Ref": "AccountName"
+                                                    },
+                                                    "-",
+                                                    {
+                                                        "Ref": "AWS::Region"
+                                                    },
+                                                    "-aem/",
+                                                    {
+                                                        "Ref": "ParentStackName"
+                                                    },
+                                                    "/files/ . --recursive"
+                                                ]
+                                            ]
+                                        }
+                                    },
+
+                                    "02_download_aws_jdk": {
+                                        "command":{
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                "curl -o /install/15/aws-java-sdk-osgi-1.11.700.jar",
+                                                " ",
+                                                {
+                                                    "Ref": "ArtifactoryUrl"
+                                                },
+                                                "/aem/aws-java-sdk-osgi-1.11.700.jar"
+                                                ]
+                                            ]
+                                        }
+                                    },
+                                    "03_copy_aem_init_script": {
+                                        "command": {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "aws s3 cp s3://",
+                                                    {
+                                                        "Ref": "AccountName"
+                                                    },
+                                                    "-",
+                                                    {
+                                                        "Ref": "AWS::Region"
+                                                    },
+                                                    "-aem/",
+                                                    {
+                                                        "Ref": "ParentStackName"
+                                                    },
+                                                    "/files/aem65.sh /etc/init.d/aem65.sh"
+                                                ]
+                                            ]
+                                        }
+                                    },
+                                    "04_install_aem": {
+                                        "command": {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "sh ",
+                                                    {
+                                                        "Ref": "AppInstallScript"
+                                                    }
+                                                ]
+                                            ]
+                                        }
+                                    }
+                                }
+                            },
+                            "SignalSuccess": {
+                                "commands": {
+                                    "Signal_success": {
+                                        "command": {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "/usr/bin/cfn-signal -e 0 --stack ",
+                                                    {
+                                                        "Ref": "AWS::StackName"
+                                                    },
+                                                    " --region ",
+                                                    {
+                                                        "Ref": "AWS::Region"
+                                                    },
+                                                    " --resource AEMAutoScalingGroup || grep \"is in CREATE_COMPLETE state and cannot be signaled\" /var/log/cfn-init.log"
+                                                ]
+                                            ]
+                                        }
+                                    }
+                                }
+                            },
+                            "LogGeneration": {
+                                "files": {
+                                    "/var/awslogs/etc/awslogs.conf": {
+                                        "content": {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "[/var/log/cfn-init-cmd-log]\n",
+                                                    "[/opt/adobe/aem/crx-quickstart/logs/access.log]\n",
+                                                    "[/opt/adobe/aem/crx-quickstart/logs/error.log]\n",
+                                                    "file = /var/log/cfn-init-cmd.log\n",
+                                                    "file = /var/log/cfn-init.log\n",
+                                                    "file = /var/log/access.log\n",
+                                                    "file = /var/log/error.log\n",
+                                                    "log_group_name = EC2Syslogs\n",
+                                                    "log_group_name = AemInstall\n",
+                                                    "log_stream_name =  {instance_id}\n"
+                                                ]
+                                            ]
+                                        }
+                                    }
+                                }
+                            },
+                            "configSets": {
+                                "SetupInstall": [
+                                    "InitialSetup",
+                                    "AppInstall",
+                                    "SignalSuccess"
+                                ]
+                            }
+                        }
+                    },
+                    "Properties": {
+                        "BlockDeviceMappings": [
+                            {
+                                "DeviceName": "/dev/sda1",
+                                "Ebs": {
+                                    "VolumeSize": {
+                                        "Ref": "LocalDriveSize"
+                                    },
+                                    "VolumeType": "gp2"
+                                }
+                            }
+                        ],
+                        "IamInstanceProfile": {
+                            "Ref": "AEMInstanceProfile"
+                        },
+                        "ImageId": {
+                            "Fn::GetAtt": [
+                                "AmiInfo",
+                                "AmiId"
+                            ]
+                        },
+                        "InstanceType": {
+                            "Ref": "InstanceType"
+                        },
+                        "SecurityGroups": [
+                            {
+                                "Fn::GetAtt": [
+                                    "SgId",
+                                    "Id"
+                                ]
+                            },
+                            {
+                                "Ref": "Appsg"
+                            }
+                        ],
+                        "UserData": {
+                            "Fn::Base64": {
+                                "Fn::Join": [
+                                    "",
+                                    [
+                                        "#!/bin/bash -xe\n",
+                                        "echo 'Script Starting...'\n",
+                                        "code=0\n",
+                                        "/usr/bin/cfn-init -v",
+                                        "         --stack ",
+                                        {
+                                            "Ref": "AWS::StackName"
+                                        },
+                                        "         --configsets SetupInstall ",
+                                        "         --resource AEMLaunchConfig ",
+                                        "         --region ",
+                                        {
+                                            "Ref": "AWS::Region"
+                                        },
+                                        " || code=$?\n"
+                                    ]
+                                ]
+                            }
+                        }
+                    },
+                    "Type": "AWS::AutoScaling::LaunchConfiguration"
+                },
+                "AEMInlinePolicy": {
+                    "Properties": {
+                        "PolicyDocument": {
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "s3:ListBucket"
+                                    ],
+                                    "Effect": "Allow",
+                                    "Resource": [
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:s3:::",
+                                                    {
+                                                        "Ref": "AccountName"
+                                                    },
+                                                    "-",
+                                                    {
+                                                        "Ref": "AWS::Region"
+                                                    },
+                                                    "-aem"
+                                                ]
+                                            ]
+                                        },
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:s3:::",
+                                                    {
+                                                        "Ref": "BucketName"
+                                                    }
+                                                ]
+                                            ]
+                                        },
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:s3:::",
+                                                    {
+                                                        "Ref": "AssetsBucketName"
+                                                    }
+                                                ]
+                                            ]
+                                        }
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:PutObject",
+                                        "s3:GetObject",
+                                        "s3:GetObjectAcl",
+                                        "s3:GetObjectTagging",
+                                        "s3:PutObjectTagging",
+                                        "s3:DeleteObject",
+                                        "s3:PutObjectAcl",
+                                        "s3:*"
+                                    ],
+                                    "Resource": [
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:s3:::",
+                                                    {
+                                                        "Ref": "AccountName"
+                                                    },
+                                                    "-",
+                                                    {
+                                                        "Ref": "AWS::Region"
+                                                    },
+                                                    "-aem/*"
+                                                ]
+                                            ]
+                                        },
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:s3:::",
+                                                    {
+                                                        "Ref": "BucketName"
+                                                    }
+                                                ]
+                                            ]
+                                        },
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:s3:::",
+                                                    {
+                                                        "Ref": "BucketName"
+                                                    },
+                                                    "/*"
+                                                ]
+                                            ]
+                                        },
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:s3:::",
+                                                    {
+                                                        "Ref": "AssetsBucketName"
+                                                    }
+                                                ]
+                                            ]
+                                        },
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:s3:::",
+                                                    {
+                                                        "Ref": "AssetsBucketName"
+                                                    },
+                                                    "/*"
+                                                ]
+                                            ]
+                                        }
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "ec2:DescribeInstances"
+                                    ],
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "logs:CreateLogGroup",
+                                        "logs:CreateLogStream",
+                                        "logs:PutLogEvents",
+                                        "logs:DescribeLogStreams"
+                                    ],
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Action": [
+                                        "iam:ListAccountAliases"
+                                    ],
+                                    "Resource": "*",
+                                    "Effect": "Allow"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": "sts:AssumeRole",
+                                    "Resource": [
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:iam::",
+                                                    {
+                                                        "Ref": "MicroAccount"
+                                                    },
+                                                    ":role/",
+                                                    {
+                                                        "Ref": "AWS::Region"
+                                                    }, 
+                                                    "-",
+                                                    {
+                                                        "Ref": "CFInvalidationRole"
+                                                    }
+                                                ]
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ],
+                            "Version": "2012-10-17"
+                        },
+                        "PolicyName": "AEMInlinePolicy",
+                        "Roles": [
+                            {
+                                "Ref": "AEMRole"
+                            }
+                        ]
+                    },
+                    "Type": "AWS::IAM::Policy"
+                },
+                "AEMInstanceProfile": {
+                    "Properties": {
+                        "Roles": [
+                            {
+                                "Ref": "AEMRole"
+                            }
+                        ]
+                    },
+                    "Type": "AWS::IAM::InstanceProfile"
+                },
+                "AEMRole": {
+                    "Properties": {
+                        "AssumeRolePolicyDocument": {
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "sts:AssumeRole"
+                                    ],
+                                    "Effect": "Allow",
+                                    "Principal": {
+                                        "Service": [
+                                            "ec2.amazonaws.com",
+                                            "s3.amazonaws.com"
+                                        ]
+                                    }
+                                }
+                            ]
+                        },
+                        "ManagedPolicyArns": [
+                            {
+                                "Fn::Join": [
+                                    "",
+                                    [
+                                        "arn:aws:iam::",
+                                        {
+                                            "Ref": "AWS::AccountId"
+                                        },
+                                        ":policy/vgEC2BasePolicy"
+                                    ]
+                                ]
+                            }
+                        ],
+                        "Path": "/"
+                    },
+                    "Type": "AWS::IAM::Role"
+                },
+                "SgId": {
+                    "Properties": {
+                        "ServiceToken": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "arn:aws:lambda:",
+                                    {
+                                        "Ref": "AWS::Region"
+                                    },
+                                    ":",
+                                    {
+                                        "Ref": "AWS::AccountId"
+                                    },
+                                    ":function:AwsSgLookup"
+                                ]
+                            ]
+                        },
+                        "sg": {
+                            "Ref": "BaseSgName"
+                        },
+                        "vpcid": {
+                            "Fn::GetAtt": [
+                                "VpcId",
+                                "VpcId"
+                            ]
+                        }
+                    },
+                    "Type": "Custom::SgLookup"
+                },
+                "SubnetInfo": {
+                    "Properties": {
+                        "Await": true,
+                        "MinimumAvailableIpCount": "8",
+                        "AvailabilityZone": "all",
+                        "ServiceToken": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "arn:aws:lambda:",
+                                    {
+                                        "Ref": "AWS::Region"
+                                    },
+                                    ":",
+                                    {
+                                        "Ref": "AWS::AccountId"
+                                    },
+                                    ":function:AwsSubnetLookup"
+                                ]
+                            ]
+                        },
+                        "SubnetNameBeginsWith": {
+                            "Ref": "TargetSubnetName"
+                        },
+                        "VpcId": {
+                            "Fn::GetAtt": [
+                                "VpcId",
+                                "VpcId"
+                            ]
+                        }
+                    },
+                    "Type": "Custom::SubnetLookup"
+                },
+                "VpcId": {
+                    "Properties": {
+                        "ServiceToken": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "arn:aws:lambda:",
+                                    {
+                                        "Ref": "AWS::Region"
+                                    },
+                                    ":",
+                                    {
+                                        "Ref": "AWS::AccountId"
+                                    },
+                                    ":function:AwsVpcLookup"
+                                ]
+                            ]
+                        }
+                    },
+                    "Type": "Custom::VpcLookup"
+                }
+            },
+        
+        "Outputs": {
+            "DomainName": {
+                "Value": {
+                    "Ref": "AEMDNS"
+                },
+                "Description": "Domain Name"
+            },
+            "VPCId": {
+                "Value": {
+                    "Fn::GetAtt": [
+                        "VpcId",
+                        "VpcId"
+                    ]
+                },
+                "Description": "VPC Name"
+            },
+            "SecurityGroups": {
+                "Value": {
+                    "Ref": "Appsg"
+                },
+                "Description": "Security Group Info"
+            }
+        }
+    }
+
+    
+   
