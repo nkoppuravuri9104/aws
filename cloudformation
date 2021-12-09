@@ -369,7 +369,7 @@
         },
         "HeartbeatTimeout": {
             "Type": "String",
-            "Default": "1800",
+            "Default": "7200",
             "Description": "HeartbeatTimeout timeout in seconds"
         },
         "CloudWatchEventName": {
@@ -591,7 +591,7 @@
                                     "{{ InstanceId }}"
                                 ],
                                 "Parameters": {
-                                    "executionTimeout": "1800",
+                                    "executionTimeout": "7200",
                                     "commands": [ " scripts=( /opt/adobe/scripts/do_publish_backups.sh /opt/adobe/scripts/do_preview_backups.sh /opt/adobe/scripts/do_author_backups.sh ); for script in ${scripts[@]}; do if [ -f $script ]; then sh $script ; fi; done " ]
                                 }
                             }
@@ -924,6 +924,7 @@
         },
         "AEMAutoScalingGroup": {
             "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "DependsOn": "AEMLaunchConfig",
             "Properties": {
                 "VPCZoneIdentifier": [
                     {
