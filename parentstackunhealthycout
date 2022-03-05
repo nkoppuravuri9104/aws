@@ -1,0 +1,3374 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Conditions": {
+        "EmptyKey": {
+            "Fn::Equals": [
+                {
+                    "Ref": "KeyName"
+                },
+                ""
+            ]
+        },
+        "NotCi": {
+            "Fn::Equals": [
+                {
+                    "Ref": "CiPrefix"
+                },
+                ""
+            ]
+        },
+        "NotCiFeature":{
+            "Fn::Or": [
+                {
+                    "Fn::Equals": [
+                        { 
+                            "Fn::Select" : [
+                                "0", 
+                                { 
+                                    "Fn::Split": ["/", { "Ref": "BranchName" }]
+                                }
+                            ] 
+                        },
+                        "release"
+                    ]
+                },
+                {
+                    "Fn::And": [
+                        {
+                            "Fn::Equals": [
+                                { 
+                                    "Fn::Select" : [
+                                        "0", 
+                                        { 
+                                            "Fn::Split": ["/", { "Ref": "BranchName" }]
+                                        }
+                                    ] 
+                                },
+                                "feature"
+                            ]
+                        },
+                        {
+                            "Condition": "NotCi"
+                        }
+                    ]
+                }
+            ]
+        },
+        "ifFeatureBranch": {
+            "Fn::And": [
+                {
+                    "Fn::Equals": [
+                        { 
+                            "Fn::Select" : [
+                                "0", 
+                                { 
+                                    "Fn::Split": ["/", { "Ref": "BranchName" }]
+                                }
+                            ] 
+                        },
+                        "feature"
+                    ]
+                }
+                , 
+                {
+                    "Condition": "isNotEmptyBG"
+                }
+            ]
+        },
+        "ifReleaseBranch": {
+            "Fn::And": [
+                {
+                    "Condition": "isNotFeature"
+                }
+                , 
+                {
+                    "Condition": "isNotEmptyBG"
+                }
+            ]
+        },
+        "isNotFeature":{
+            "Fn::Not": [
+                {
+                    "Condition": "ifFeatureBranch"
+                }
+            ]
+        },
+        "isNotEmptyBG": {
+            "Fn::Not": [
+                {
+                    "Condition": "isEmptyBG"
+                }
+            ]
+        },
+        "isEmptyBG": {
+            "Fn::Equals": [
+                {
+                    "Ref": "BlueGreenSelection"
+                },
+                ""
+            ]
+        },
+        "enableBackup": {
+            "Fn::And": [
+                {
+                    "Condition": "NotCi"
+                },
+                {
+                    "Condition": "ifReleaseBranch"
+                }
+            ]
+        },
+        "enableSubscription": {
+            "Fn::And": [
+                {
+                    "Condition": "NotCi"
+                },
+                {
+                    "Condition": "ifReleaseBranch"
+                }
+            ]
+
+        },
+        "elevateAuthoring": {
+            "Fn::Equals": [
+                {
+                    "Ref": "ElevateAuthoring"
+                },
+                "true"
+            ]
+        },
+        "elevatePrePublisher": {
+            "Fn::Equals": [
+                {
+                    "Ref": "ElevatePrePublisher"
+                },
+                "true"
+            ]
+        },
+        "elevatePublisher": {
+            "Fn::Equals": [
+                {
+                    "Ref": "ElevatePublisher"
+                },
+                "true"
+            ]
+        },
+        "elevateAdminServer": {
+            "Fn::Equals": [
+                {
+                    "Ref": "ElevateAdminServer"
+                },
+                "true"
+            ]
+        },
+        "enableMultiRegion": {
+            "Fn::Equals": [
+                {
+                    "Ref": "EnableMultiRegion"
+                },
+                "true"
+            ]
+        },
+        "enableWest2Region": {
+            "Fn::Equals": [
+                {
+                    "Ref": "EnableWest2Region"
+                },
+                "true"
+            ]
+        },
+        "isOORDeployment": {
+            "Fn::Not": [
+                {
+                    "Fn::Equals": [
+                        {"Ref":"AWS::Region"},
+                        {"Ref":"ActiveAuthorRegion"}
+                    ]
+                }
+            ]
+        },
+        "ifPiTRestoreNeeded": {
+            "Fn::Equals": [
+                {
+                    "Ref": "PiTRestoreNeeded"
+                },
+                "Yes"
+            ]
+        }        
+        
+    },
+    "Description": "Create an AEM Environment",
+    "Parameters": {
+        "AccountName": {
+            "Description": "Friendly Name iof the AWS Account",
+            "Type": "String"
+        },
+        "AMIPrefix": {
+            "Description": "AMI (OS image) name prefix to identify AMI ID",
+            "Type": "String"
+        },
+        "AccessUserName": {
+            "Description": "Access USER ID for logging in and escalated privilege",
+            "Type": "String"
+        },
+        "AuthASGMinSize": {
+            "Description": "Minimum Number of Instances to Run",
+            "Type": "String"
+        },
+        "AuthASGDesireSize": {
+            "Description": "Desired Number of Instances to Run",
+            "Type": "String"
+        },
+        "AuthASGMaxSize": {
+            "Description": "Maximum Number of Instances to Run",
+            "Type": "String"
+        },
+        "Environment" : {
+            "Description": "Name of the environment",
+            "Type": "String"
+        },
+        "AuthorBucket": {
+            "Description": "Name of the AEM Bucket created by cloudformation plugin",
+            "Type": "String"
+        },
+        "BucketPostFix": {
+            "Description": "Name of the AEM Bucket created by cloudformation plugin",
+            "Type": "String"
+        },
+        "AssetsBucketName": {
+            "Description": "Name of the AEM Assets Author Bucket in the Micro Account",
+            "Type": "String"
+        },
+        "PubASGMinSize": {
+            "Description": "Minimum Number of Instances to Run",
+            "Type": "String"
+        },
+        "PubASGMaxSize": {
+            "Description": "Maximum Number of Instances to Run",
+            "Type": "String"
+        },
+        "PubASGDesireSize": {
+            "Description": "Desired Number of Instances to Run",
+            "Type": "String"
+        },
+        "PubPreviewASGMinSize": {
+            "Description": "Minimum Number of Instances to Run",
+            "Type": "String"
+        },
+        "PubPreviewASGMaxSize": {
+            "Description": "Maximum Number of Instances to Run",
+            "Type": "String"
+        },
+        "PubPreviewASGDesireSize": {
+            "Description": "Desired Number of Instances to Run",
+            "Type": "String"
+        },
+        "DispASGMinSize": {
+            "Description": "Minimum Number of Instances to Run",
+            "Type": "String"
+        },
+        "DispASGMaxSize": {
+            "Description": "Maximum Number of Instances to Run",
+            "Type": "String"
+        },
+        "DispASGDesireSize": {
+            "Description": "Desired Number of Instances to Run",
+            "Type": "String"
+        },
+        "Disp01ASGMinSize": {
+            "Description": "Minimum Number of Instances to Run",
+            "Type": "String"
+        },
+        "Disp01ASGMaxSize": {
+            "Description": "Maximum Number of Instances to Run",
+            "Type": "String"
+        },
+        "Disp01ASGDesireSize": {
+            "Description": "Desired Number of Instances to Run",
+            "Type": "String"
+        },
+        "DispPreviewASGMinSize": {
+            "Description": "Minimum Number of Instances to Run",
+            "Type": "String"
+        },
+        "DispPreviewASGMaxSize": {
+            "Description": "Maximum Number of Instances to Run",
+            "Type": "String"
+        },
+        "DispPreviewASGDesireSize": {
+            "Description": "Desired Number of Instances to Run",
+            "Type": "String"
+        },
+        "BaseSgName": {
+            "Description": "Name of Base Sg to lookup ie LinuxBaseSg or WindowsBaseSg",
+            "Type": "String"
+        },
+        "Prefix": {
+            "Description": "A Prefix for Uniqueness",
+            "Type": "String"
+        },
+        "CiPrefix": {
+            "Description": "A new prefix for s3 url",
+            "Type": "String"
+        },
+        "Description": {
+            "Description": "Generic Desscrition variable to sprinkle comments throughout code",
+            "Type": "String"
+        },
+        "DnsHostedZoneName": {
+            "Description": "HostedZone name to create DNS record in",
+            "Type": "String"
+        },
+        "AuthInstanceType": {
+            "ConstraintDescription": "must be a valid EC2 instance type.",
+            "Description": "Amazon EC2 instance types",
+            "Type": "String"
+        },
+        "PubInstanceType": {
+            "ConstraintDescription": "must be a valid EC2 instance type.",
+            "Description": "Amazon EC2 instance type",
+            "Type": "String"
+        },
+        "DispInstanceType": {
+            "ConstraintDescription": "must be a valid EC2 instance type.",
+            "Description": "Amazon EC2 instance type",
+            "Type": "String"
+        },
+        "KeyName": {
+            "Description": "Name of an existing EC2 Keypair. Any empty string will create the instance with no keypair.",
+            "Type": "String"
+        },
+        "LocalDriveSize": {
+            "Description": "Root or C Drive size in GB",
+            "Type": "Number"
+        },
+        "AdminLocalDriveSize" : {
+            "Description": "Root or C Drive size in GB",
+            "Type": "String"
+        },
+        "TargetSubnetName": {
+            "Description": "The Subnet in which to create the EC2 Instance",
+            "Type": "String"
+        },
+		"ArtifactoryUrl": {
+            "Description": "The Artifactory url for JDK download",
+            "Type": "String"
+        },
+        "AEMVersion": {
+            "Description": "AEM Version to download from Artifactory",
+            "Type": "String"
+        },
+        "AEMSPVersion": {
+            "Description": "AEM Service Pack Version to download from Artifactory",
+            "Type": "String"
+        },
+        "JDKVersion": {
+            "Description": "Java JDK Version to download from Artifactory",
+            "Type": "String"
+        },
+		"Runmode": {
+            "Description": "Capturing the Line of business & Environment for runmode",
+            "Type": "String"
+        },
+        "RandomValue": {
+            "Description": "Random string values provided by Bamboo that will always be different on every CloudFormation action",
+            "Type": "String"
+        },
+        "MicroAccount" : {
+            "Description": "AWS Account number where CloudFront is setup for assets bucket",
+            "Type": "String"
+        },
+        "CFInvalidationRole" : {
+            "Description": "Role Name which provides access to perform Cache Invalidation",
+            "Type": "String"
+        },
+        "NLBAccessLogS3" : {
+            "Description": "S3 Bucket location to capture the Network Load Balancer Access Logs",
+            "Type": "String"
+        },
+        "BlueGreenSelection" : {
+            "Description": "BlueGreen Selection",
+            "Type": "String"
+        },
+        "BranchName": {
+            "Description": "Capturing the branch name of the deployment",
+            "Type": "String"
+        },
+        "AuthDispAcmCertificateArn": {
+            "Description": "Auth Dispatcher ACM Certificate",
+            "Type": "String"
+        },
+        "AuthAcmCertificateArn": {
+            "Description": "Auth ACM Certificate",
+            "Type": "String"
+        },
+        "DispAcmCertificateArn": {
+            "Description": "Publisher Dispatcher ACM Certificate",
+            "Type": "String"
+        },
+        "PubAcmCertificateArn": {
+            "Description": "Publisher ACM Certificate",
+            "Type": "String"
+        },
+        "PublisherPreviewArn": {
+            "Description": "Publisher Preview ACM Certificate",
+            "Type": "String"
+        },
+        "PreviewDispatcherArn": {
+            "Description": "Preview Dispatche ACM Certificate",
+            "Type": "String"
+        },
+        "AdminAcmCertificateArn": {
+            "Description": "Admin ACM Certificate",
+            "Type": "String"
+        },
+        "MainCertificateArn": {
+            "Description": "Main ACM Certificate",
+            "Type": "String"
+        },
+        "AEMEC2SNSNotificationsArn": {
+            "Description": "SNS ARN",
+            "Type": "String"
+        },
+        "EnvPrefix": {
+            "Description": "This is for SAT and PERF",
+            "Type": "String"
+        },
+        "InstancePostFixTag": {
+            "Description": "Add this string in the tag to detect the stack instances",
+            "Type": "String"
+        }, 
+        "SourceRoleAccount" : {
+            "Description": "AWS Account number where AEM Base Source Account is setup ",
+            "Type": "String"
+        },
+        "AEMSecretsRole" : {
+            "Description": "Role Name which provides access to Secrets",
+            "Type": "String"
+        },
+        "AEMCERolename" : {
+            "Description": "Role Name which provides access to AEM Contentsync bucket",
+            "Type": "String"
+        },
+        "PreprodAccount" : {
+            "Description": "Lower Environment AWS Account number where AEM Contentsync bucket exists",
+            "Type": "String"
+        },
+        "PreprodAccountName" : {
+            "Description": "Lower Environment AWS Account where AEM Contentsync bucket exists",
+            "Type": "String"
+        },
+        "DispatcherCdnDistributionID": {
+            "Description": "Distribution ID of the Dispatcher CDN created through aem-disp-cdn project",
+            "Type": "String"
+        },
+        "ElevateAuthoring" : {
+            "Description": "Flag to build Autoring",
+            "Type": "String"
+        },
+        "ElevatePrePublisher" : {
+            "Description": "Flag to build Preview Publisher",
+            "Type": "String"
+        },
+        "ElevatePublisher" : {
+            "Description": "Flag to build Publisher",
+            "Type": "String"
+        },
+        "ElevateAdminServer" : {
+            "Description": "Flag to build AdminNGINX",
+            "Type": "String"
+        },
+        "EnableMultiRegion" : {
+            "Description": "Flag to enable Multi Region",
+            "Type": "String"
+        },
+        "OORUSEast2" : {
+            "Description": "Other region",
+            "Type": "String"
+        },
+        
+        "EnableWest2Region" : {
+            "Description": "Flag to enable us-west-2 Region",
+            "Type": "String"
+        },
+        "OORUSWest2" : {
+            "Description": "Other region",
+            "Type": "String"
+        },
+        "ActiveAuthorRegion" : {
+            "Description": "Region value for active author",
+            "Type": "String"
+        },
+        "EFSTargetCname": 
+		{
+            "Default": "",
+			"Type": "String"
+		},
+
+		"EFSTargetSG": 
+		{
+            "Default": "",
+			"Type": "String"
+		},
+        "PiTRestoreNeeded": {
+            "Description": "Reads the output of PiTRestoreNeeded, set in stack output of Certs & DNS stack",
+            "Type": "String",
+            "Default": "No"
+        },
+        "PiTRestoreTimeStamp": {
+            "Description": "Reads the output of PiTRestoreTimeStamp, set in stack output of Certs & DNS stack",
+            "Type": "String",
+            "Default": "mm-dd-yyyy"
+        },
+        "TotalDesirePublisherAtAuth" : {
+            "Description": "Total Number of Publisher expected to register with author - this should be total count of PubASGDesireSize from all reagions",
+            "Type": "String"
+        },
+        "ApacheAMIPrefix": {
+            "Description": "Apache AMIPrefix",
+            "Type": "String"
+        }
+    },
+    "Resources": {
+
+        "AEMLogs": {
+            "Type": "AWS::Logs::LogGroup",
+            "Properties": {
+                "LogGroupName": 
+              {
+                "Fn::Join": [
+                  "",
+                  [
+                    "AEMLogs-",
+                    {
+                      "Ref": "AWS::StackName"
+                    },
+                    "-aem"
+                  ]
+                ]
+              }            
+            }
+        },
+        "AEMLogsFilter":{
+            "Type":"AWS::Logs::SubscriptionFilter",
+            "Condition" : "enableSubscription",
+            "DependsOn":"AEMLogs",
+            "Properties":{
+              "RoleArn":{"Fn::Join":["",["arn:aws:iam::",{"Ref":"AWS::AccountId"},":role/CWL2KINESIS"]]},
+              "DestinationArn":{"Fn::Join":["",["arn:aws:kinesis:",{"Ref":"AWS::Region"},":",{"Ref":"AWS::AccountId"},":stream/splunk_kinesis_stream"]]},
+              "FilterPattern":"",
+              "LogGroupName":{
+                    "Fn::Join": [
+                    "",
+                    [
+                        "AEMLogs-",
+                        {
+                        "Ref": "AWS::StackName"
+                        },
+                        "-aem"
+                    ]
+                    ]
+                }    
+                }
+         },
+        "VpcId": {
+            "Type": "Custom::VpcLookup",
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "arn:aws:lambda:",
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            ":",
+                            {
+                                "Ref": "AWS::AccountId"
+                            },
+                            ":function:AwsVpcLookup"
+                        ]
+                    ]
+                }
+            }
+        },
+        "PublisherSG": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Publisher Security Group",
+                "SecurityGroupEgress": [
+                    {
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "1080",
+                        "IpProtocol": "TCP",
+                        "ToPort": "1080"
+                    },
+					{
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "4502",
+                        "IpProtocol": "TCP",
+                        "ToPort": "4502"
+                    },
+					{
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "5443",
+                        "IpProtocol": "tcp",
+                        "ToPort": "5443"
+                    },
+                    {
+                        "CidrIp": "192.175.238.105/32",
+                        "FromPort": "53443",
+                        "IpProtocol": "TCP",
+                        "ToPort": "53443",
+                        "Description" : "devapi.vanguard.com"
+                    },
+                    {
+                        "CidrIp": "192.175.146.100/32",
+                        "FromPort": "53443",
+                        "IpProtocol": "TCP",
+                        "ToPort": "53443",
+                        "Description" : "satapi.vanguard.com"
+                    }
+                ],
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "4503",
+                        "IpProtocol": "tcp",
+                        "ToPort": "4503"
+                    },
+					{
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "6443",
+                        "IpProtocol": "tcp",
+                        "ToPort": "6443"
+                    }
+                ],
+                "VpcId": {
+                    "Fn::GetAtt": [
+                        "VpcId",
+                        "VpcId"
+                    ]
+                }
+            }
+        },
+        "AuthorSG": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Author Security Group",
+                "SecurityGroupEgress": [
+                    {
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "4502",
+                        "IpProtocol": "TCP",
+                        "ToPort": "4503"
+                    },
+					{
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "6443",
+                        "IpProtocol": "TCP",
+                        "ToPort": "6443"
+                    },
+                    {
+                        "CidrIp": "192.175.238.105/32",
+                        "FromPort": "53443",
+                        "IpProtocol": "TCP",
+                        "ToPort": "53443",
+                        "Description" : "devapi.vanguard.com"
+                    },
+                    {
+                        "CidrIp": "192.175.146.100/32",
+                        "FromPort": "53443",
+                        "IpProtocol": "TCP",
+                        "ToPort": "53443",
+                        "Description" : "satapi.vanguard.com"
+                    }
+                ],
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "4502",
+                        "IpProtocol": "tcp",
+                        "ToPort": "4502"
+                    },
+					{
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "5443",
+                        "IpProtocol": "tcp",
+                        "ToPort": "5443"
+                    }	
+                ],
+                "VpcId": {
+                    "Fn::GetAtt": [
+                        "VpcId",
+                        "VpcId"
+                    ]
+                }
+            }
+        },
+        "DispatcherSG": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Dispatcher Security Group",
+                "SecurityGroupEgress": [
+                    {
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "4502",
+                        "IpProtocol": "TCP",
+                        "ToPort": "4502"
+                    },
+                    {
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "4503",
+                        "IpProtocol": "TCP",
+                        "ToPort": "4503"
+                    },
+					{
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "5443",
+                        "IpProtocol": "TCP",
+                        "ToPort": "5443"
+                    },					
+					{
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "6443",
+                        "IpProtocol": "TCP",
+                        "ToPort": "6443"
+                    },
+                    {
+                        "CidrIp": "192.175.238.105/32",
+                        "FromPort": "53443",
+                        "IpProtocol": "TCP",
+                        "ToPort": "53443",
+                        "Description" : "devapi.vanguard.com"
+                    }
+                ],
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "1080",
+                        "IpProtocol": "tcp",
+                        "ToPort": "1080"
+                    },
+					{
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "1443",
+                        "IpProtocol": "tcp",
+                        "ToPort": "1443"
+                    }
+                ],
+                "VpcId": {
+                    "Fn::GetAtt": [
+                        "VpcId",
+                        "VpcId"
+                    ]
+                }
+            }
+        },        
+        "AdminNGINXSG": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Admin NGINX Security Group",
+                "SecurityGroupEgress": [
+                    {
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "1080",
+                        "IpProtocol": "TCP",
+                        "ToPort": "1080"
+                    },
+                    {
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "1443",
+                        "IpProtocol": "TCP",
+                        "ToPort": "1443"
+                    },
+                    {
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "4502",
+                        "IpProtocol": "TCP",
+                        "ToPort": "4502"
+                    },
+                    {
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "4503",
+                        "IpProtocol": "TCP",
+                        "ToPort": "4503"
+                    },
+					{
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "5443",
+                        "IpProtocol": "TCP",
+                        "ToPort": "5443"
+                    },					
+					{
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "6443",
+                        "IpProtocol": "TCP",
+                        "ToPort": "6443"
+                    },
+                    {
+                        "CidrIp": "192.175.238.105/32",
+                        "FromPort": "53443",
+                        "IpProtocol": "TCP",
+                        "ToPort": "53443",
+                        "Description" : "devapi.vanguard.com"
+                    }
+                ],
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "1080",
+                        "IpProtocol": "tcp",
+                        "ToPort": "1080"
+                    },
+					{
+                        "CidrIp": "10.0.0.0/8",
+                        "FromPort": "1443",
+                        "IpProtocol": "tcp",
+                        "ToPort": "1443"
+                    }
+                ],
+                "VpcId": {
+                    "Fn::GetAtt": [
+                        "VpcId",
+                        "VpcId"
+                    ]
+                }
+            }
+        },
+        "DispatcherStackAuth": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition" : "elevateAuthoring",
+            "Properties": {
+                "Parameters": {
+                    "AccountName": {
+                        "Ref": "AccountName"
+                    },
+                    "AMIPrefix": {
+                        "Ref": "ApacheAMIPrefix"
+                    },
+                    "AccessUserName": {
+                        "Ref": "AccessUserName"
+                    },
+                    "AssetsBucketName" : {
+                        "Ref": "AssetsBucketName"
+                    },
+                    "ASGMinSize": {
+                        "Ref": "DispASGMinSize"
+                    },
+                    "ASGMaxSize": {
+                        "Ref": "DispASGMaxSize"
+                    },
+                    "ASGDesireSize": {
+                        "Ref": "DispASGDesireSize"
+                    },                    
+                    "BaseSgName": {
+                        "Ref": "BaseSgName"
+                    },
+                    "Environment" : { 
+                        "Ref": "Environment"
+                    },
+                    "BucketName": {
+                        "Ref": "AuthorBucket"
+                    },
+                    "AEMEC2SNSNotificationsArn": {
+                        "Ref": "AEMEC2SNSNotificationsArn"
+                    },
+                    "Description": "AemAuthDispatcherStack",
+                    "Prefix": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                {
+                                    "Ref": "Prefix"
+                                },
+                                "aemsitesauth",
+                                {
+                                    "Fn::If" : [
+                                        "ifFeatureBranch",
+                                        "-feature",
+                                        {   "Ref" : "AWS::NoValue"  }
+                                    ]
+                                },
+                                {
+                                    "Fn::If" : [
+                                        "ifReleaseBranch",
+                                        "-release",
+                                        {   "Ref" : "AWS::NoValue"  }
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "CiPrefix":{
+                        "Ref": "CiPrefix"
+                    },
+                    "EnvPrefix":{
+                        "Ref": "EnvPrefix"
+                    },
+                    "DnsHostedZoneName": {
+                        "Ref": "DnsHostedZoneName"
+                    },
+                    "InstanceType": {
+                        "Ref": "DispInstanceType"
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "ListenerPort" : "1443",
+                    "LocalDriveSize": {
+                        "Ref": "LocalDriveSize"
+                    },
+                    "AdminLocalDriveSize": {
+                        "Ref": "AdminLocalDriveSize"
+                    },
+                    "TargetSubnetName": {
+                        "Ref": "TargetSubnetName"
+                    },
+					"ArtifactoryUrl": {
+                        "Ref": "ArtifactoryUrl"
+                    },
+                    "AEMVersion": {
+                        "Ref": "AEMVersion"
+                    },
+                    "AEMSPVersion": {
+                        "Ref": "AEMSPVersion"
+                    },
+                    "JDKVersion": {
+                        "Ref": "JDKVersion"
+                    },
+                    "ParentStackName":{
+                        "Ref": "AWS::StackName"
+                    },
+                    "AppInstallScript": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "auth-dispatcher.sh ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                " ",
+                                {
+                                    "Ref": "AEMEC2SNSNotificationsArn"
+                                },
+                                {
+                                    "Ref": "ArtifactoryUrl"
+                                },
+                                " ",
+                                {
+                                    "Ref": "Runmode"
+                                },
+                                " ",
+                                {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            {
+                                            "Fn::If" : [
+                                                "ifFeatureBranch",
+                                                "-feature",
+                                                {   "Ref" : "AWS::NoValue"  }
+                                            ]
+                                            },
+                                            {
+                                                "Fn::If" : [
+                                                    "ifReleaseBranch",
+                                                    "-release",
+                                                    {   "Ref" : "AWS::NoValue"  }
+                                                ]
+                                            },
+                                            {
+                                                "Ref": "BlueGreenSelection"
+                                            },
+                                            {
+                                                "Ref": "InstancePostFixTag"
+                                            },
+                                            "-",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            }
+                                        ]
+                                    ]
+                                },
+                                " ",
+                                {
+                                    "Fn::Join": [
+                                      "",
+                                      [
+                                        "AEMLogs-",
+                                        {
+                                          "Ref": "AWS::StackName"
+                                        },
+                                        "-aem"
+                                      ]
+                                    ]
+                                  }    
+                            ]
+                        ]
+                    } ,
+                    "Appsg": {
+                        "Ref": "DispatcherSG"
+                    },
+                    "InstanceTagName":"aem-auth-dispatcher",
+                    "LogGroupName": {
+                        "Ref": "AEMLogs"
+                    },
+					"Runmode": {
+                        "Ref": "Runmode"
+                    },
+                    "RandomValue": {
+                        "Ref": "RandomValue"
+                    },
+                    "MicroAccount": {
+                        "Ref": "MicroAccount"
+                    },
+                    "CFInvalidationRole": {
+                        "Ref": "CFInvalidationRole"
+                    },
+                    "NLBAccessLogS3": {
+                        "Ref": "NLBAccessLogS3"
+                    },
+                    "BlueGreenSelection": {
+                        "Ref": "BlueGreenSelection"
+                    },
+                    "SourceRoleAccount": {
+                        "Ref": "SourceRoleAccount"
+                    },
+                    "AEMSecretsRole": {
+                        "Ref": "AEMSecretsRole"
+                    },
+                    "AEMCERolename": {
+                        "Ref": "AEMCERolename"
+                    },
+                    "PreprodAccount": {
+                        "Ref": "PreprodAccount"
+                    },
+                    "PreprodAccountName": {
+                        "Ref": "PreprodAccountName"
+                    },
+                    "InstancePostfix": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                {
+                                    "Fn::If" : [
+                                        "ifFeatureBranch",
+                                        "-feature",
+                                        {   "Ref" : "AWS::NoValue"  }
+                                    ]
+                                },
+                                {
+                                    "Fn::If" : [
+                                        "ifReleaseBranch",
+                                        "-release",
+                                        {   "Ref" : "AWS::NoValue"  }
+                                    ]
+                                },
+                                {
+                                    "Ref": "BlueGreenSelection"
+                                },
+                                {
+                                    "Ref": "InstancePostFixTag"
+                                },
+                                "-",
+                                {
+                                    "Ref": "AWS::Region"
+                                }
+                            ]
+                        ]
+                    },
+                    "AcmCertificateArn":{
+                        "Ref": "AuthAcmCertificateArn"
+                    },
+                    "AcmCertificateRegionArn":{
+                        "Ref": "MainCertificateArn"
+                    },
+                    "DispatcherCdnDistributionID": {
+                        "Ref": "DispatcherCdnDistributionID"
+                    },
+                    "BranchName": { 
+                        "Ref": "BranchName"
+                    },
+                    "EnableMultiRegion" : {
+                        "Ref": "EnableMultiRegion"
+                    },
+                    "ActiveAuthorRegion" : {
+                        "Ref": "ActiveAuthorRegion"
+                    },
+                    "BucketPostFix" : {
+                        "Ref": "BucketPostFix"
+                    },
+                    "AdminStack" : "false",
+                    "OORUSEast2" : {
+                        "Ref": "OORUSEast2"
+                    },
+                    "EnableWest2Region": {
+                        "Ref": "EnableWest2Region"
+                    },
+                    "OORUSWest2" : {
+                        "Ref": "OORUSWest2"
+                    },
+                    "EFSTargetCname" : {
+                        "Ref": "EFSTargetCname"
+                    },
+                    "EFSTargetSG" : {
+                        "Ref": "EFSTargetSG"
+                    }
+                    
+                },
+                "Tags": [ 
+                    { 
+                        "Key" : "BranchName", 
+                        "Value" : { 
+                            "Ref": "BranchName"
+                        } 
+                    } 
+                ],
+                "TemplateURL": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "https://s3.amazonaws.com/",
+                            {
+                                "Ref": "AccountName"
+                            },
+                            "-",
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            "-aem/",
+                            {
+                                "Ref": "AWS::StackName"
+                            },
+                            "/files/asgstack.json"
+                        ]
+                    ]
+                },
+                "TimeoutInMinutes": "60"
+            }
+        },
+        "AuthorStack01": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition" : "elevateAuthoring",
+            "Properties": {
+                "Parameters": {
+                    "AccountName": {
+                        "Ref": "AccountName"
+                    },
+                    "AMIPrefix": {
+                        "Ref": "AMIPrefix"
+                    },
+                    "AccessUserName": {
+                        "Ref": "AccessUserName"
+                    },
+                    "ASGMinSize": {
+                        "Ref": "AuthASGMinSize"
+                    },
+                    "ASGMaxSize": {
+                        "Ref": "AuthASGMaxSize"
+                    },
+                    "ASGDesireSize": {
+                        "Ref": "AuthASGDesireSize"
+                    },
+                    "BaseSgName": {
+                        "Ref": "BaseSgName"
+                    },
+                    "BucketName": {
+                        "Ref": "AuthorBucket"
+                    },
+                    "Environment" : { 
+                        "Ref": "Environment"
+                    },
+                    "AssetsBucketName" : {
+                        "Ref": "AssetsBucketName"
+                    },
+                    "AEMEC2SNSNotificationsArn": {
+                        "Ref": "AEMEC2SNSNotificationsArn"
+                    },
+                    "Description": "AemAuthorStack",
+                    "Prefix": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                {
+                                    "Ref": "Prefix"
+                                },
+                                "aemauthdisp",
+                                {
+                                    "Fn::If" : [
+                                        "ifFeatureBranch",
+                                        "-feature",
+                                        {   "Ref" : "AWS::NoValue"  }
+                                    ]
+                                },
+                                {
+                                    "Fn::If" : [
+                                        "ifReleaseBranch",
+                                        "-release",
+                                        {   "Ref" : "AWS::NoValue"  }
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "CiPrefix":{
+                        "Ref": "CiPrefix"
+                    },
+                    "EnvPrefix":{
+                        "Ref": "EnvPrefix"
+                    },
+                    "DnsHostedZoneName": {
+                        "Ref": "DnsHostedZoneName"
+                    },
+                    "InstanceType": {
+                        "Ref": "AuthInstanceType"
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "ListenerPort" : "5443",
+                    "LocalDriveSize": {
+                        "Ref": "LocalDriveSize"
+                    },
+                    "AdminLocalDriveSize": {
+                        "Ref": "AdminLocalDriveSize"
+                    },
+                    "TargetSubnetName": {
+                        "Ref": "TargetSubnetName"
+                    },
+					"ArtifactoryUrl": {
+                        "Ref": "ArtifactoryUrl"
+                    },
+                    "AEMVersion": {
+                        "Ref": "AEMVersion"
+                    },
+                    "AEMSPVersion": {
+                        "Ref": "AEMSPVersion"
+                    },
+                    "JDKVersion": {
+                        "Ref": "JDKVersion"
+                    },
+                    "ParentStackName":{
+                        "Ref": "AWS::StackName"
+                    },
+                    "AppInstallScript": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "author.sh ",
+                                {
+                                    "Fn::GetAtt": [
+                                        "VpcId",
+                                        "VpcId"
+                                    ]
+                                },
+                                " ",
+                                {
+                                    "Ref": "AuthorBucket"
+                                },
+                                " ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                " ",
+                                {
+                                    "Ref": "AEMEC2SNSNotificationsArn"
+                                },
+                                {
+                                    "Ref": "Runmode"
+                                },
+                                " ",
+                                {
+                                    "Fn::If" : [
+                                        "isNotEmptyBG",
+                                        { 
+                                            "Ref": "BlueGreenSelection"
+                                        },
+                                        "NoBG"
+                                    ]
+                                },
+                                " ",
+                                {
+                                    "Fn::If" : [
+                                        "enableBackup",
+                                        "YES",
+                                        "NO"
+                                    ]
+                                },
+                                " ",
+                                {
+                                    "Ref": "EnableMultiRegion"
+                                },
+                                " ",
+                                {
+                                    "Ref": "OORUSEast2"
+                                },
+                                " ",
+                                {
+                                    "Fn::Join": [
+                                      "",
+                                      [
+                                        "AEMLogs-",
+                                        {
+                                          "Ref": "AWS::StackName"
+                                        },
+                                        "-aem"
+                                      ]
+                                    ]
+                                },
+                                " ",
+                                {
+                                    "Ref": "BucketPostFix"
+                                },
+                                " ",
+                                {
+                                    "Fn::If" : [
+                                        "isOORDeployment",
+                                        "YES",
+                                        "NO"
+                                    ]
+                                },
+                                " ",
+                                {
+                                    "Ref": "AccountName" 
+                                },
+                                " ",
+                                " ",
+                                {
+                                    "Ref": "ActiveAuthorRegion"
+                                },
+                                " ",
+                                {
+                                    "Ref": "EnableWest2Region"
+                                },
+                                " ",
+                                {
+                                    "Ref": "OORUSWest2"
+                                },
+                                " ",
+                                {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            {
+                                                "Ref": "AccountName"
+                                            },
+                                            "-",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "-aem-contentsynch-",
+                                            {
+                                                "Ref": "Environment"
+                                            }
+                                        ]
+                                    ]
+                                },
+                                " ",
+                                {
+                                    "Ref": "PiTRestoreNeeded"
+                                },
+                                " ",
+                                {
+                                    "Fn::If" : [
+                                        "ifPiTRestoreNeeded",
+                                        {   
+                                            "Ref": "PiTRestoreTimeStamp"    
+                                        },
+                                        "NA"
+                                    ]
+                                },
+                                " ",
+                                {
+                                    "Ref": "TotalDesirePublisherAtAuth"
+                                }
+                            ]
+                        ]
+                    },
+                    "Appsg": {
+                        "Ref": "AuthorSG"
+                    },
+                    "InstanceTagName":"aem-author",
+                    "LogGroupName": {
+                        "Ref": "AEMLogs"
+                    },
+					"Runmode": {
+                        "Ref": "Runmode"
+                    },
+                    "RandomValue": {
+                        "Ref": "RandomValue"
+                    },
+                    "MicroAccount": {
+                        "Ref": "MicroAccount"
+                    },
+                    "CFInvalidationRole": {
+                        "Ref": "CFInvalidationRole"
+                    },
+                    "NLBAccessLogS3": {
+                        "Ref": "NLBAccessLogS3"
+                    },
+                    "BlueGreenSelection": {
+                        "Ref": "BlueGreenSelection"
+                    },
+                    "SourceRoleAccount": {
+                        "Ref": "SourceRoleAccount"
+                    },
+                    "AEMSecretsRole": {
+                        "Ref": "AEMSecretsRole"
+                    },
+                    "AEMCERolename": {
+                        "Ref": "AEMCERolename"
+                    },
+                    "PreprodAccount": {
+                        "Ref": "PreprodAccount"
+                    },
+                    "PreprodAccountName": {
+                        "Ref": "PreprodAccountName"
+                    },
+                    "InstancePostfix": {
+                        "Fn::Join": [
+                            "",
+                                [
+                                    {
+                                        "Fn::If" : [
+                                            "ifFeatureBranch",
+                                            "-feature",
+                                            {   "Ref" : "AWS::NoValue"  }
+                                        ]
+                                    },
+                                    {
+                                        "Fn::If" : [
+                                            "ifReleaseBranch",
+                                            "-release",
+                                            {   "Ref" : "AWS::NoValue"  }
+                                        ]
+                                    },
+                                    {
+                                        "Ref": "BlueGreenSelection"
+                                    },
+                                    {
+                                        "Ref": "InstancePostFixTag"
+                                    },
+                                    "-",
+                                    {
+                                        "Ref": "AWS::Region"
+                                    }
+                                ]
+                        ]
+                    },
+                    "AcmCertificateArn":{
+                        "Ref": "AuthDispAcmCertificateArn"
+                    },
+                    "AcmCertificateRegionArn":{
+                        "Ref": "MainCertificateArn"
+                    },
+                    "DispatcherCdnDistributionID": {
+                        "Ref": "DispatcherCdnDistributionID"
+                    },
+                    "BranchName": { 
+                        "Ref": "BranchName"
+                    },
+                    "EnableMultiRegion" : {
+                        "Ref": "EnableMultiRegion"
+                    },
+                    "ActiveAuthorRegion" : {
+                        "Ref": "ActiveAuthorRegion"
+                    },
+                    "BucketPostFix" : {
+                        "Ref": "BucketPostFix"
+                    },
+                    "AdminStack" : "false",
+                    "OORUSEast2" : {
+                        "Ref": "OORUSEast2"
+                    },
+                    "EnableWest2Region": {
+                        "Ref": "EnableWest2Region"
+                    },
+                    "OORUSWest2" : {
+                        "Ref": "OORUSWest2"
+                    },
+                    "EFSTargetCname" : {
+                        "Ref": "EFSTargetCname"
+                    },
+                    "EFSTargetSG" : {
+                        "Ref": "EFSTargetSG"
+                    }
+                },
+                "Tags": [ 
+                    { 
+                        "Key" : "BranchName", 
+                        "Value" : { 
+                            "Ref": "BranchName"
+                        } 
+                    } 
+                ],
+                "TemplateURL": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "https://s3.amazonaws.com/",
+                            {
+                                "Ref": "AccountName"
+                            },
+                            "-",
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            "-aem/",
+                            {
+                                "Ref": "AWS::StackName"
+                            },
+                            "/files/asgstack.json"
+                        ]
+                    ]
+                },
+                "TimeoutInMinutes": "60"
+            }
+        },
+        "PublisherStack01": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition" : "elevatePublisher",
+            "Properties": {
+                "Parameters": {
+                    "AccountName": {
+                        "Ref": "AccountName"
+                    },
+                    "AMIPrefix": {
+                        "Ref": "AMIPrefix"
+                    },
+                    "AccessUserName": {
+                        "Ref": "AccessUserName"
+                    },
+                    "ASGMinSize": {
+                        "Ref": "PubASGMinSize"
+                    },
+                    "ASGMaxSize": {
+                        "Ref": "PubASGMaxSize"
+                    },
+                    "ASGDesireSize": {
+                        "Ref": "PubASGDesireSize"
+                    },
+                    "BaseSgName": {
+                        "Ref": "BaseSgName"
+                    },
+                    "Environment" : { 
+                        "Ref": "Environment"
+                    },
+                    "BucketName": {
+                        "Ref": "AuthorBucket"
+                    },
+                    "AssetsBucketName" : {
+                    "Ref": "AssetsBucketName"
+                    },
+                    "AEMEC2SNSNotificationsArn": {
+                        "Ref": "AEMEC2SNSNotificationsArn"
+                    },
+                    "Description": "AemPublisherStack",
+                    "Prefix": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                {
+                                    "Ref": "Prefix"
+                                },
+                                "aempub",
+                                {
+                                    "Fn::If" : [
+                                        "ifFeatureBranch",
+                                        "-feature",
+                                        {   "Ref" : "AWS::NoValue"  }
+                                    ]
+                                },
+                                {
+                                    "Fn::If" : [
+                                        "ifReleaseBranch",
+                                        "-release",
+                                        {   "Ref" : "AWS::NoValue"  }
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "CiPrefix":{
+                        "Ref": "CiPrefix"
+                    },
+                    "EnvPrefix":{
+                        "Ref": "EnvPrefix"
+                    },
+                    "DnsHostedZoneName": {
+                        "Ref": "DnsHostedZoneName"
+                    },
+                    "InstanceType": {
+                        "Ref": "PubInstanceType"
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "ListenerPort" : "6443",
+                    "LocalDriveSize": {
+                        "Ref": "LocalDriveSize"
+                    },
+                    "AdminLocalDriveSize": {
+                        "Ref": "AdminLocalDriveSize"
+                    },
+                    "TargetSubnetName": {
+                        "Ref": "TargetSubnetName"
+                    },
+					"ArtifactoryUrl": {
+                        "Ref": "ArtifactoryUrl"
+                    },
+                    "AEMVersion": {
+                        "Ref": "AEMVersion"
+                    },
+                    "AEMSPVersion": {
+                        "Ref": "AEMSPVersion"
+                    },
+                    "JDKVersion": {
+                        "Ref": "JDKVersion"
+                    },
+                    "ParentStackName":{
+                        "Ref": "AWS::StackName"
+                    },	
+                    "Appsg": {
+                        "Ref": "PublisherSG"
+                    },	
+                    "AppInstallScript": {
+                        "Fn::Join": [
+                        "",
+                            [
+                                "publisher.sh ",
+                                {
+                                    "Fn::GetAtt": [
+                                        "VpcId",
+                                        "VpcId"
+                                    ]
+                                },
+                                " ",
+                                {
+                                    "Ref": "AuthorBucket"
+                                },
+                                " ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                " ",
+                                {
+                                    "Ref": "AEMEC2SNSNotificationsArn"
+                                },
+                                {
+                                    "Ref": "Runmode"
+                                },
+                                " ",
+                                {
+                                    "Fn::If" : [
+                                        "isNotEmptyBG",
+                                        { 
+                                            "Ref": "BlueGreenSelection"
+                                        },
+                                        "NoBG"
+                                    ]
+                                },
+                                " ",
+                                {
+                                    "Fn::If" : [
+                                        "enableBackup",
+                                        "YES",
+                                        "NO"
+                                    ]
+                                },
+                                " ",
+                                {
+                                    "Fn::Join": [
+                                        "",
+                                            [
+                                                {
+                                                    "Fn::If" : [
+                                                        "ifFeatureBranch",
+                                                        "-feature",
+                                                        {   "Ref" : "AWS::NoValue"  }
+                                                    ]
+                                                },
+                                                {
+                                                    "Fn::If" : [
+                                                        "ifReleaseBranch",
+                                                        "-release",
+                                                        {   "Ref" : "AWS::NoValue"  }
+                                                    ]
+                                                },
+                                                {
+                                                    "Ref": "BlueGreenSelection"
+                                                },
+                                                {
+                                                    "Ref": "InstancePostFixTag"
+                                                },
+                                                "-",
+                                                {
+                                                    "Ref": "AWS::Region"
+                                                }
+                                            ]
+                                    ]
+                                },
+                                " ",
+                                {
+                                    "Ref": "ActiveAuthorRegion"
+                                },
+                                " ",
+                                {
+                                    "Fn::Join": [
+                                      "",
+                                      [
+                                        "AEMLogs-",
+                                        {
+                                          "Ref": "AWS::StackName"
+                                        },
+                                        "-aem"
+                                      ]
+                                    ]
+                                },
+                                " ",
+                                {
+                                    "Ref": "BucketPostFix"
+                                },
+                                " ",
+                                {
+                                    "Fn::If" : [
+                                        "isOORDeployment",
+                                        "YES",
+                                        "NO"
+                                    ]
+                                },
+                                " ",
+                                {
+                                    "Ref": "AccountName" 
+                                },
+                                " ",
+                                {
+                                    "Ref": "PiTRestoreNeeded"
+                                },
+                                " ",
+                                {
+                                    "Fn::If" : [
+                                        "ifPiTRestoreNeeded",
+                                        {   
+                                            "Ref": "PiTRestoreTimeStamp"    
+                                        },
+                                        "NA"
+                                    ]
+                                }
+
+                            ]
+                        ]
+                    },
+                    "InstanceTagName":"aem-pub",
+                    "LogGroupName": {
+                        "Ref": "AEMLogs"
+                    },
+					"Runmode": {
+                        "Ref": "Runmode"
+                    },
+                    "RandomValue": {
+                        "Ref": "RandomValue"
+                    },
+                    "MicroAccount": {
+                        "Ref": "MicroAccount"
+                    },
+                    "CFInvalidationRole": {
+                        "Ref": "CFInvalidationRole"
+                    },
+                    "NLBAccessLogS3": {
+                        "Ref": "NLBAccessLogS3"
+                    },
+                    "BlueGreenSelection": {
+                        "Ref": "BlueGreenSelection"
+                    },
+                    "SourceRoleAccount": {
+                        "Ref": "SourceRoleAccount"
+                    },
+                    "AEMSecretsRole": {
+                        "Ref": "AEMSecretsRole"
+                    },
+                    "AEMCERolename": {
+                        "Ref": "AEMCERolename"
+                    },
+                    "PreprodAccount": {
+                        "Ref": "PreprodAccount"
+                    },
+                    "PreprodAccountName": {
+                        "Ref": "PreprodAccountName"
+                    },
+                    "InstancePostfix": {
+                        "Fn::Join": [
+                            "",
+                                [
+                                    {
+                                        "Fn::If" : [
+                                            "ifFeatureBranch",
+                                            "-feature",
+                                            {   "Ref" : "AWS::NoValue"  }
+                                        ]
+                                    },
+                                    {
+                                        "Fn::If" : [
+                                            "ifReleaseBranch",
+                                            "-release",
+                                            {   "Ref" : "AWS::NoValue"  }
+                                        ]
+                                    },
+                                    {
+                                        "Ref": "BlueGreenSelection"
+                                    },
+                                    {
+                                        "Ref": "InstancePostFixTag"
+                                    },
+                                    "-",
+                                    {
+                                        "Ref": "AWS::Region"
+                                    }
+                                ]
+                        ]
+                    },
+                    "AcmCertificateArn":{
+                        "Ref": "PubAcmCertificateArn"
+                    },
+                    "AcmCertificateRegionArn":{
+                        "Ref": "MainCertificateArn"
+                    },
+                    "DispatcherCdnDistributionID": {
+                        "Ref": "DispatcherCdnDistributionID"
+                    },
+                    "BranchName": { 
+                        "Ref": "BranchName"
+                    },
+                    "EnableMultiRegion" : {
+                        "Ref": "EnableMultiRegion"
+                    },
+                    "ActiveAuthorRegion" : {
+                        "Ref": "ActiveAuthorRegion"
+                    },
+                    "BucketPostFix" : {
+                        "Ref": "BucketPostFix"
+                    },
+                    "AdminStack" : "false",
+                    "OORUSEast2" : {
+                        "Ref": "OORUSEast2"
+                    },
+                    "EnableWest2Region": {
+                        "Ref": "EnableWest2Region"
+                    },
+                    "OORUSWest2" : {
+                        "Ref": "OORUSWest2"
+                    },
+                    "EFSTargetCname" : {
+                        "Ref": "EFSTargetCname"
+                    },
+                    "EFSTargetSG" : {
+                        "Ref": "EFSTargetSG"
+                    }
+                },
+                "Tags": [ 
+                    { 
+                        "Key" : "BranchName", 
+                        "Value" : { 
+                            "Ref": "BranchName"
+                        } 
+                    } 
+                ],
+                "TemplateURL": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "https://s3.amazonaws.com/",
+                            {
+                                "Ref": "AccountName"
+                            },
+                            "-",
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            "-aem/",
+                            {
+                                "Ref": "AWS::StackName"
+                            },
+                            "/files/asgstack.json"
+                        ]
+                    ]
+                },
+                "TimeoutInMinutes": "60"
+            }
+        },
+        "AdminNginxAdminStack01": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition" : "NotCi",
+            "Properties": {
+                "Parameters": {
+                    "AccountName": {
+                        "Ref": "AccountName"
+                    },
+                    "AMIPrefix": {
+                        "Ref": "AMIPrefix"
+                    },
+                    "AccessUserName": {
+                        "Ref": "AccessUserName"
+                    },
+                    "AssetsBucketName" : {
+                        "Ref": "AssetsBucketName"
+                    },
+                    "ASGMinSize": {
+                        "Ref": "DispPreviewASGMinSize"
+                    },
+                    "ASGMaxSize": {
+                        "Ref": "DispPreviewASGMaxSize"
+                    },
+                    "ASGDesireSize": {
+                        "Ref": "DispPreviewASGDesireSize"
+                    },
+                    "BaseSgName": {
+                        "Ref": "BaseSgName"
+                    },
+                    "BucketName": {
+                        "Ref": "AuthorBucket"
+                    },
+                    "Environment" : { 
+                        "Ref": "Environment"
+                    },
+                    "AEMEC2SNSNotificationsArn": {
+                        "Ref": "AEMEC2SNSNotificationsArn"
+                    }, 
+                    "Description": "AemNGINXAdminStack",
+                    "Prefix": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                {
+                                    "Ref": "Prefix"
+                                },
+                                "aemadmin",
+                                {
+                                    "Fn::If" : [
+                                        "ifFeatureBranch",
+                                        "-feature",
+                                        {   "Ref" : "AWS::NoValue"  }
+                                    ]
+                                },
+                                {
+                                    "Fn::If" : [
+                                        "ifReleaseBranch",
+                                        "-release",
+                                        {   "Ref" : "AWS::NoValue"  }
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "CiPrefix":{
+                        "Ref": "CiPrefix"
+                    },
+                    "EnvPrefix":{
+                        "Ref": "EnvPrefix"
+                    },
+                    "DnsHostedZoneName": {
+                        "Ref": "DnsHostedZoneName"
+                    },
+                    "InstanceType": {
+                        "Ref": "DispInstanceType"
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "ListenerPort" : "1443",
+                    "LocalDriveSize": {
+                        "Ref": "LocalDriveSize"
+                    },
+                    "AdminLocalDriveSize": {
+                        "Ref": "AdminLocalDriveSize"
+                    },
+                    "TargetSubnetName": {
+                        "Ref": "TargetSubnetName"
+                    },
+					"ArtifactoryUrl": {
+                        "Ref": "ArtifactoryUrl"
+                    },
+                    "AEMVersion": {
+                        "Ref": "AEMVersion"
+                    },
+                    "AEMSPVersion": {
+                        "Ref": "AEMSPVersion"
+                    },
+                    "JDKVersion": {
+                        "Ref": "JDKVersion"
+                    },
+                    "ParentStackName":{
+                        "Ref": "AWS::StackName"
+                    },
+                    "AppInstallScript": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "aem-admin-nginx.sh ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                " ",
+                                {
+                                    "Ref": "AEMEC2SNSNotificationsArn"
+                                },
+                                {
+                                    "Ref": "ArtifactoryUrl"
+                                },
+                                " ",
+                                {
+                                    "Ref": "AuthorBucket"
+                                },
+                                " ",
+                                {
+                                    "Ref": "Runmode"
+                                },
+                                " ",
+                                {
+                                    "Fn::Join": [
+                                      "",
+                                      [
+                                        "AEMLogs-",
+                                        {
+                                          "Ref": "AWS::StackName"
+                                        },
+                                        "-aem"
+                                      ]
+                                    ]
+                                  },
+                                  " ",
+                                  { 
+                                      "Ref": "EnableMultiRegion"
+                                  },
+                                  " ",
+                                  {   
+                                    "Fn::Join": [
+                                    "",
+                                    [
+                                        {
+                                            "Ref": "AccountName"
+                                        },
+                                        "-",
+                                        {
+                                            "Ref": "OORUSEast2"
+                                        },
+                                        {
+                                            "Ref": "BucketPostFix"
+                                        }
+                                    ]
+                                    ]
+                                },
+                                " ",
+                                {
+                                  "Fn::If" : [
+                                      "isOORDeployment",
+                                      "YES",
+                                      "NO"
+                                  ]
+                                },
+                                " ",
+                                {
+                                    "Fn::If" : [
+                                        "enableBackup",
+                                        "YES",
+                                        "NO"
+                                    ]
+                                },  
+                                " ",
+                                {
+                                    "Fn::If" : [
+                                        "isNotEmptyBG",
+                                        { 
+                                            "Ref": "BlueGreenSelection"
+                                        },
+                                        "NoBG"
+                                    ]
+                                },
+                                " ",
+                                {
+                                  "Ref": "EnableWest2Region"
+                                } ,
+                                " ",
+                                {   
+                                  "Fn::Join": [
+                                  "",
+                                  [
+                                      {
+                                          "Ref": "AccountName"
+                                      },
+                                      "-",
+                                      {
+                                          "Ref": "OORUSWest2"
+                                      },
+                                      {
+                                          "Ref": "BucketPostFix"
+                                      }
+                                  ]
+                                  ]
+                                },
+                                " ",
+                                {
+                                    "Ref": "EFSTargetCname"
+                                },
+                                " ",
+                                {
+                                    "Ref": "EFSTargetSG"
+                                }                            
+                            ]
+                        ]
+                    } ,
+                    "Appsg": {
+                        "Ref": "AdminNGINXSG"
+                    },
+                    "InstanceTagName":"aem-nginx-admin",
+                    "LogGroupName": {
+                        "Ref": "AEMLogs"
+                    },
+					"Runmode": {
+                        "Ref": "Runmode"
+                    },
+                    "RandomValue": {
+                        "Ref": "RandomValue"
+                    },
+                    "MicroAccount": {
+                        "Ref": "MicroAccount"
+                    },
+                    "CFInvalidationRole": {
+                        "Ref": "CFInvalidationRole"
+                    },
+                    "NLBAccessLogS3": {
+                        "Ref": "NLBAccessLogS3"
+                    },
+                    "BlueGreenSelection": {
+                        "Ref": "BlueGreenSelection"
+                    },
+                    "SourceRoleAccount": {
+                        "Ref": "SourceRoleAccount"
+                    },
+                    "AEMSecretsRole": {
+                        "Ref": "AEMSecretsRole"
+                    },
+                    "AEMCERolename": {
+                        "Ref": "AEMCERolename"
+                    },
+                    "PreprodAccount": {
+                        "Ref": "PreprodAccount"
+                    },
+                    "PreprodAccountName": {
+                        "Ref": "PreprodAccountName"
+                    },
+                    "InstancePostfix": {
+                        "Fn::Join": [
+                            "",
+                                [
+                                    {
+                                        "Fn::If" : [
+                                            "ifFeatureBranch",
+                                            "-feature",
+                                            {   "Ref" : "AWS::NoValue"  }
+                                        ]
+                                    },
+                                    {
+                                        "Fn::If" : [
+                                            "ifReleaseBranch",
+                                            "-release",
+                                            {   "Ref" : "AWS::NoValue"  }
+                                        ]
+                                    },
+                                    {
+                                        "Ref": "BlueGreenSelection"
+                                    },
+                                    {
+                                        "Ref": "InstancePostFixTag"
+                                    },
+                                    "-",
+                                    {
+                                        "Ref": "AWS::Region"
+                                    }
+                                ]
+                        ]
+                    },
+                    "AcmCertificateArn":{
+                        "Ref": "AdminAcmCertificateArn"
+                    },
+                    "AcmCertificateRegionArn":{
+                        "Ref": "MainCertificateArn"
+                    },
+                    "DispatcherCdnDistributionID": {
+                        "Ref": "DispatcherCdnDistributionID"
+                    },
+                    "BranchName": { 
+                        "Ref": "BranchName"
+                    },
+                    "EnableMultiRegion" : {
+                        "Ref": "EnableMultiRegion"
+                    },
+                    "ActiveAuthorRegion" : {
+                        "Ref": "ActiveAuthorRegion"
+                    },
+                    "BucketPostFix" : {
+                        "Ref": "BucketPostFix"
+                    },
+                    "AdminStack" : "true",
+                    "OORUSEast2" : {
+                        "Ref": "OORUSEast2"
+                    },
+                    "EnableWest2Region": {
+                        "Ref": "EnableWest2Region"
+                    },
+                    "OORUSWest2" : {
+                        "Ref": "OORUSWest2"
+                    },
+                    "EFSTargetCname" : {
+                        "Ref": "EFSTargetCname"
+                    },
+                    "EFSTargetSG" : {
+                        "Ref": "EFSTargetSG"
+                    }
+                },
+                "Tags": [ 
+                    { 
+                        "Key" : "BranchName", 
+                        "Value" : { 
+                            "Ref": "BranchName"
+                        } 
+                    } 
+                ],
+                "TemplateURL": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "https://s3.amazonaws.com/",
+                            {
+                                "Ref": "AccountName"
+                            },
+                            "-",
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            "-aem/",
+                            {
+                                "Ref": "AWS::StackName"
+                            },
+                            "/files/asgstack.json"
+                        ]
+                    ]
+                },
+                "TimeoutInMinutes": "60"
+            }
+        },        
+        "PublisherPreviewStack01": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition" : "elevatePrePublisher",
+            "Properties": {
+                "Parameters": {
+                    "AccountName": {
+                        "Ref": "AccountName"
+                    },
+                    "AMIPrefix": {
+                        "Ref": "AMIPrefix"
+                    },
+                    "AccessUserName": {
+                        "Ref": "AccessUserName"
+                    },
+                    "AssetsBucketName" : {
+                        "Ref": "AssetsBucketName"
+                    },
+                    "ASGMinSize": {
+                        "Ref": "PubPreviewASGMinSize"
+                    },
+                    "ASGMaxSize": {
+                        "Ref": "PubPreviewASGMaxSize"
+                    },
+                    "ASGDesireSize": {
+                        "Ref": "PubPreviewASGDesireSize"
+                    },
+                    "BaseSgName": {
+                        "Ref": "BaseSgName"
+                    },
+                    "BucketName": {
+                        "Ref": "AuthorBucket"
+                    },
+                    "Environment" : { 
+                        "Ref": "Environment"
+                    },
+                    "AEMEC2SNSNotificationsArn": {
+                        "Ref": "AEMEC2SNSNotificationsArn"
+                    },
+                    "Description": "AemPubPreviewStack",
+                    "Prefix": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                {
+                                    "Ref": "Prefix"
+                                },
+                                "aempubpre",
+                                {
+                                    "Fn::If" : [
+                                        "ifFeatureBranch",
+                                        "-feature",
+                                        {   "Ref" : "AWS::NoValue"  }
+                                    ]
+                                },
+                                {
+                                    "Fn::If" : [
+                                        "ifReleaseBranch",
+                                        "-release",
+                                        {   "Ref" : "AWS::NoValue"  }
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "CiPrefix":{
+                        "Ref": "CiPrefix"
+                    },
+                    "EnvPrefix":{
+                        "Ref": "EnvPrefix"
+                    },
+                    "DnsHostedZoneName": {
+                        "Ref": "DnsHostedZoneName"
+                    },
+                    "InstanceType": {
+                        "Ref": "PubInstanceType"
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "ListenerPort" : "6443",
+                    "LocalDriveSize": {
+                        "Ref": "LocalDriveSize"
+                    },
+                    "AdminLocalDriveSize": {
+                        "Ref": "AdminLocalDriveSize"
+                    },
+                    "TargetSubnetName": {
+                        "Ref": "TargetSubnetName"
+                    },
+					"ArtifactoryUrl": {
+                        "Ref": "ArtifactoryUrl"
+                    },
+                    "AEMVersion": {
+                        "Ref": "AEMVersion"
+                    },
+                    "AEMSPVersion": {
+                        "Ref": "AEMSPVersion"
+                    },
+                    "JDKVersion": {
+                        "Ref": "JDKVersion"
+                    },
+                    "ParentStackName":{
+                        "Ref": "AWS::StackName"
+                    },	
+                    "Appsg": {
+                        "Ref": "PublisherSG"
+                    },	
+                    "AppInstallScript": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "pre-publisher.sh ",
+                                {
+                                    "Fn::GetAtt": [
+                                        "VpcId",
+                                        "VpcId"
+                                    ]
+                                },
+                                " ",
+                                {
+                                    "Ref": "AuthorBucket"
+                                },
+                                " ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                " ",
+                                {
+                                    "Ref": "Runmode"
+                                },
+                                " ",
+                                {
+                                    "Fn::If" : [
+                                        "isNotEmptyBG",
+                                        { 
+                                            "Ref": "BlueGreenSelection"
+                                        },
+                                        "NoBG"
+                                    ]
+                                },
+                                " ",
+                                {
+                                    "Fn::If" : [
+                                        "enableBackup",
+                                        "YES",
+                                        "NO"
+                                    ]
+                                },
+                                " ",
+                                {
+                                    "Fn::Join": [
+                                        "",
+                                            [
+                                                {
+                                                "Fn::If" : [
+                                                    "ifFeatureBranch",
+                                                    "-feature",
+                                                    {   "Ref" : "AWS::NoValue"  }
+                                                ]
+                                            },
+                                            {
+                                                "Fn::If" : [
+                                                    "ifReleaseBranch",
+                                                    "-release",
+                                                    {   "Ref" : "AWS::NoValue"  }
+                                                ]
+                                            },
+                                            {
+                                                "Ref": "BlueGreenSelection"
+                                            },
+                                            {
+                                                "Ref": "InstancePostFixTag"
+                                            },
+                                            "-",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            }
+                                        ]
+                                    ]
+                                },
+                                " ",
+                                {
+                                    "Ref": "ActiveAuthorRegion"
+                                },
+                                " ",
+                                {
+                                    "Fn::Join": [
+                                      "",
+                                      [
+                                        "AEMLogs-",
+                                        {
+                                          "Ref": "AWS::StackName"
+                                        },
+                                        "-aem"
+                                      ]
+                                    ]
+                                },
+                                " ",
+                                {
+                                    "Ref": "BucketPostFix"
+                                },
+                                " ",
+                                {
+                                    "Fn::If" : [
+                                        "isOORDeployment",
+                                        "YES",
+                                        "NO"
+                                    ]
+                                },
+                                " ",
+                                {
+                                    "Ref": "AccountName" 
+                                },
+                                " ",
+                                {
+                                    "Ref": "AEMEC2SNSNotificationsArn"
+                                },
+                                " ",
+                                {
+                                    "Ref": "PiTRestoreNeeded"
+                                },
+                                " ",
+                                {
+                                    "Fn::If" : [
+                                        "ifPiTRestoreNeeded",
+                                        {   
+                                            "Ref": "PiTRestoreTimeStamp"   
+                                        },
+                                        "NA"
+                                    ]
+                                }
+                            ]
+                        ] 
+                    } ,
+                    "InstanceTagName":"aem-pub-pre",
+                    "LogGroupName": {
+                        "Ref": "AEMLogs"
+                    },
+					"Runmode": {
+                        "Ref": "Runmode"
+                    },
+                    "RandomValue": {
+                        "Ref": "RandomValue"
+                    },
+                    "MicroAccount": {
+                        "Ref": "MicroAccount"
+                    },
+                    "CFInvalidationRole": {
+                        "Ref": "CFInvalidationRole"
+                    },
+                    "NLBAccessLogS3": {
+                        "Ref": "NLBAccessLogS3"
+                    },
+                    "BlueGreenSelection": {
+                        "Ref": "BlueGreenSelection"
+                    },
+                    "SourceRoleAccount": {
+                        "Ref": "SourceRoleAccount"
+                    },
+                    "AEMSecretsRole": {
+                        "Ref": "AEMSecretsRole"
+                    },
+                    "AEMCERolename": {
+                        "Ref": "AEMCERolename"
+                    },
+                    "PreprodAccount": {
+                        "Ref": "PreprodAccount"
+                    },
+                    "PreprodAccountName": {
+                        "Ref": "PreprodAccountName"
+                    },
+                    "InstancePostfix": {
+                        "Fn::Join": [
+                            "",
+                                [
+                                    {
+                                    "Fn::If" : [
+                                        "ifFeatureBranch",
+                                        "-feature",
+                                        {   "Ref" : "AWS::NoValue"  }
+                                    ]
+                                },
+                                {
+                                    "Fn::If" : [
+                                        "ifReleaseBranch",
+                                        "-release",
+                                        {   "Ref" : "AWS::NoValue"  }
+                                    ]
+                                },
+                                {
+                                    "Ref": "BlueGreenSelection"
+                                },
+                                {
+                                    "Ref": "InstancePostFixTag"
+                                },
+                                "-",
+                                {
+                                    "Ref": "AWS::Region"
+                                }
+                            ]
+                        ]
+                    },
+                    "AcmCertificateArn":{
+                        "Ref": "PublisherPreviewArn"
+                    },
+                    "AcmCertificateRegionArn":{
+                        "Ref": "MainCertificateArn"
+                    },
+                    "DispatcherCdnDistributionID": {
+                        "Ref": "DispatcherCdnDistributionID"
+                    },
+                    "BranchName": { 
+                        "Ref": "BranchName"
+                    },
+                    "EnableMultiRegion" : {
+                        "Ref": "EnableMultiRegion"
+                    },
+                    "ActiveAuthorRegion" : {
+                        "Ref": "ActiveAuthorRegion"
+                    },
+                    "BucketPostFix" : {
+                        "Ref": "BucketPostFix"
+                    },
+                    "AdminStack" : "false",
+                    "OORUSEast2" : {
+                        "Ref": "OORUSEast2"
+                    },
+                    "EnableWest2Region": {
+                        "Ref": "EnableWest2Region"
+                    },
+                    "OORUSWest2" : {
+                        "Ref": "OORUSWest2"
+                    },
+                    "EFSTargetCname" : {
+                        "Ref": "EFSTargetCname"
+                    },
+                    "EFSTargetSG" : {
+                        "Ref": "EFSTargetSG"
+                    }
+                },
+                "Tags": [ 
+                    { 
+                        "Key" : "BranchName", 
+                        "Value" : { 
+                            "Ref": "BranchName"
+                        } 
+                    } 
+                ],
+                "TemplateURL": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "https://s3.amazonaws.com/",
+                            {
+                                "Ref": "AccountName"
+                            },
+                            "-",
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            "-aem/",
+                            {
+                                "Ref": "AWS::StackName"
+                            },
+                            "/files/asgstack.json"
+                        ]
+                    ]
+                },
+                "TimeoutInMinutes": "60"
+            }
+        },
+        "DispatcherStack01": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition" : "elevatePublisher",
+            "Properties": {
+                "Parameters": {
+                    "AccountName": {
+                        "Ref": "AccountName"
+                    },
+                    "AMIPrefix": {
+                        "Ref": "ApacheAMIPrefix"
+                    },
+                    "AccessUserName": {
+                        "Ref": "AccessUserName"
+                    },
+                    "AssetsBucketName" : {
+                        "Ref": "AssetsBucketName"
+                    },
+                    "ASGMinSize": {
+                        "Ref": "Disp01ASGMinSize"
+                    },
+                    "ASGMaxSize": {
+                        "Ref": "Disp01ASGMaxSize"
+                    },
+                    "ASGDesireSize": {
+                        "Ref": "Disp01ASGDesireSize"
+                    },
+                    "BaseSgName": {
+                        "Ref": "BaseSgName"
+                    },
+                    "BucketName": {
+                        "Ref": "AuthorBucket"
+                    },
+                    "Environment" : { 
+                        "Ref": "Environment"
+                    },
+                    "AEMEC2SNSNotificationsArn": {
+                        "Ref": "AEMEC2SNSNotificationsArn"
+                    },
+                    "Description": "AemDispatcherStack",
+                    "Prefix": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                {
+                                    "Ref": "Prefix"
+                                },
+                                "aemdisp",
+                                {
+                                    "Fn::If" : [
+                                        "ifFeatureBranch",
+                                        "-feature",
+                                        {   "Ref" : "AWS::NoValue"  }
+                                    ]
+                                },
+                                {
+                                    "Fn::If" : [
+                                        "ifReleaseBranch",
+                                        "-release",
+                                        {   "Ref" : "AWS::NoValue"  }
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "CiPrefix":{
+                        "Ref": "CiPrefix"
+                    },
+                    "EnvPrefix":{
+                        "Ref": "EnvPrefix"
+                    },
+                    "DnsHostedZoneName": {
+                        "Ref": "DnsHostedZoneName"
+                    },
+                    "InstanceType": {
+                        "Ref": "DispInstanceType"
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "ListenerPort" : "1443",
+                    "LocalDriveSize": {
+                        "Ref": "LocalDriveSize"
+                    },
+                    "AdminLocalDriveSize": {
+                        "Ref": "AdminLocalDriveSize"
+                    },
+                    "TargetSubnetName": {
+                        "Ref": "TargetSubnetName"
+                    },
+					"ArtifactoryUrl": {
+                        "Ref": "ArtifactoryUrl"
+                    },
+                    "AEMVersion": {
+                        "Ref": "AEMVersion"
+                    },
+                    "AEMSPVersion": {
+                        "Ref": "AEMSPVersion"
+                    },
+                    "JDKVersion": {
+                        "Ref": "JDKVersion"
+                    },
+                    "ParentStackName":{
+                        "Ref": "AWS::StackName"
+                    },
+                    "AppInstallScript": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "dispatcher.sh ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                {
+                                    "Ref": "AEMEC2SNSNotificationsArn"
+                                },
+                                " ",
+                                {
+                                    "Ref": "ArtifactoryUrl"
+                                },
+                                " ",
+                                {
+                                    "Ref": "AuthorBucket"
+                                },                                
+                                " ",
+                                {
+                                    "Ref": "Runmode"
+                                },
+                                " ",
+                                {
+                                    "Fn::Join": [
+                                        "",
+                                           [ {
+                                                "Fn::If" : [
+                                                    "ifFeatureBranch",
+                                                    "-feature",
+                                                    {   "Ref" : "AWS::NoValue"  }
+                                                ]
+                                            },
+                                            {
+                                                "Fn::If" : [
+                                                    "ifReleaseBranch",
+                                                    "-release",
+                                                    {   "Ref" : "AWS::NoValue"  }
+                                                ]
+                                            },
+                                            {
+                                                "Ref": "BlueGreenSelection"
+                                            },
+                                            {
+                                                "Ref": "InstancePostFixTag"
+                                            },
+                                            "-",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            }
+                                        ]
+                                    ]
+                                }  ,
+                                " ",
+                                {
+                                    "Fn::Join": [
+                                      "",
+                                      [
+                                        "AEMLogs-",
+                                        {
+                                          "Ref": "AWS::StackName"
+                                        },
+                                        "-aem"
+                                      ]
+                                    ]
+                                  } 
+                            ]
+                        ]
+                    } ,
+                    "Appsg": {
+                        "Ref": "DispatcherSG"
+                    },
+                    "InstanceTagName":"aem-dispatcher",
+                    "LogGroupName": {
+                        "Ref": "AEMLogs"
+                    },
+					"Runmode": {
+                        "Ref": "Runmode"
+                    },
+                    "RandomValue": {
+                        "Ref": "RandomValue"
+                    },
+                    "MicroAccount": {
+                        "Ref": "MicroAccount"
+                    },
+                    "CFInvalidationRole": {
+                        "Ref": "CFInvalidationRole"
+                    },
+                    "NLBAccessLogS3": {
+                        "Ref": "NLBAccessLogS3"
+                    },
+                    "BlueGreenSelection": {
+                        "Ref": "BlueGreenSelection"
+                    },
+                    "SourceRoleAccount": {
+                        "Ref": "SourceRoleAccount"
+                    },
+                    "AEMSecretsRole": {
+                        "Ref": "AEMSecretsRole"
+                    },
+                    "AEMCERolename": {
+                        "Ref": "AEMCERolename"
+                    },
+                    "PreprodAccount": {
+                        "Ref": "PreprodAccount"
+                    },
+                    "PreprodAccountName": {
+                        "Ref": "PreprodAccountName"
+                    },
+                    "InstancePostfix": {
+                        "Fn::Join": [
+                            "",
+                               [ {
+                                    "Fn::If" : [
+                                        "ifFeatureBranch",
+                                        "-feature",
+                                        {   "Ref" : "AWS::NoValue"  }
+                                    ]
+                                },
+                                {
+                                    "Fn::If" : [
+                                        "ifReleaseBranch",
+                                        "-release",
+                                        {   "Ref" : "AWS::NoValue"  }
+                                    ]
+                                },
+                                {
+                                    "Ref": "BlueGreenSelection"
+                                },
+                                {
+                                    "Ref": "InstancePostFixTag"
+                                },
+                                "-",
+                                {
+                                    "Ref": "AWS::Region"
+                                }
+                            ]
+                        ]
+                    },
+                    "AcmCertificateArn":{
+                        "Ref": "DispAcmCertificateArn"
+                    },
+                    "AcmCertificateRegionArn":{
+                        "Ref": "MainCertificateArn"
+                    },
+                    "DispatcherCdnDistributionID": {
+                        "Ref": "DispatcherCdnDistributionID"
+                    },
+                    "BranchName": { 
+                        "Ref": "BranchName"
+                    },
+                    "EnableMultiRegion" : {
+                        "Ref": "EnableMultiRegion"
+                    },
+                    "ActiveAuthorRegion" : {
+                        "Ref": "ActiveAuthorRegion"
+                    },
+                    "BucketPostFix" : {
+                        "Ref": "BucketPostFix"
+                    },
+                    "AdminStack" : "false",
+                    "OORUSEast2" : {
+                        "Ref": "OORUSEast2"
+                    },
+                    "EnableWest2Region": {
+                        "Ref": "EnableWest2Region"
+                    },
+                    "OORUSWest2" : {
+                        "Ref": "OORUSWest2"
+                    },
+                    "EFSTargetCname" : {
+                        "Ref": "EFSTargetCname"
+                    },
+                    "EFSTargetSG" : {
+                        "Ref": "EFSTargetSG"
+                    }
+                },
+                "Tags": [ 
+                    { 
+                        "Key" : "BranchName", 
+                        "Value" : { 
+                            "Ref": "BranchName"
+                        } 
+                    } 
+                ],
+                "TemplateURL": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "https://s3.amazonaws.com/",
+                            {
+                                "Ref": "AccountName"
+                            },
+                            "-",
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            "-aem/",
+                            {
+                                "Ref": "AWS::StackName"
+                            },
+                            "/files/asgstack.json"
+                        ]
+                    ]
+                },
+                "TimeoutInMinutes": "60"
+            }
+        },
+        "PreviewDispatcherStack01": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition" : "elevatePrePublisher",
+            "Properties": {
+                "Parameters": {
+                    "AccountName": {
+                        "Ref": "AccountName"
+                    },
+                    "AMIPrefix": {
+                        "Ref": "ApacheAMIPrefix"
+                    },
+                    "AccessUserName": {
+                        "Ref": "AccessUserName"
+                    },
+                    "AssetsBucketName" : {
+                        "Ref": "AssetsBucketName"
+                    },
+                    "ASGMinSize": {
+                        "Ref": "DispPreviewASGMinSize"
+                    },
+                    "ASGMaxSize": {
+                        "Ref": "DispPreviewASGMaxSize"
+                    },
+                    "ASGDesireSize": {
+                        "Ref": "DispPreviewASGDesireSize"
+                    },                    
+                    "BaseSgName": {
+                        "Ref": "BaseSgName"
+                    },
+                    "BucketName": {
+                        "Ref": "AuthorBucket"
+                    },
+                    "Environment" : { 
+                        "Ref": "Environment"
+                    },
+                    "AEMEC2SNSNotificationsArn": {
+                        "Ref": "AEMEC2SNSNotificationsArn"
+                    },
+                    "Description": "AemDispatcherPreviewStack",
+                    "Prefix": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                {
+                                    "Ref": "Prefix"
+                                },
+                                "aemdisppre",
+                                {
+                                    "Fn::If" : [
+                                        "ifFeatureBranch",
+                                        "-feature",
+                                        {   "Ref" : "AWS::NoValue"  }
+                                    ]
+                                },
+                                {
+                                    "Fn::If" : [
+                                        "ifReleaseBranch",
+                                        "-release",
+                                        {   "Ref" : "AWS::NoValue"  }
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "CiPrefix":{
+                        "Ref": "CiPrefix"
+                    },
+                    "EnvPrefix":{
+                        "Ref": "EnvPrefix"
+                    },
+                    "DnsHostedZoneName": {
+                        "Ref": "DnsHostedZoneName"
+                    },
+                    "InstanceType": {
+                        "Ref": "DispInstanceType"
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "ListenerPort" : "1443",
+                    "LocalDriveSize": {
+                        "Ref": "LocalDriveSize"
+                    },
+                    "AdminLocalDriveSize": {
+                        "Ref": "AdminLocalDriveSize"
+                    },
+                    "TargetSubnetName": {
+                        "Ref": "TargetSubnetName"
+                    },
+					"ArtifactoryUrl": {
+                        "Ref": "ArtifactoryUrl"
+                    },
+                    "AEMVersion": {
+                        "Ref": "AEMVersion"
+                    },
+                    "AEMSPVersion": {
+                        "Ref": "AEMSPVersion"
+                    },
+                    "JDKVersion": {
+                        "Ref": "JDKVersion"
+                    },
+                    "ParentStackName":{
+                        "Ref": "AWS::StackName"
+                    },
+                    "AppInstallScript": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "pre-dispatcher.sh ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                " ",
+                                {
+                                    "Ref": "AEMEC2SNSNotificationsArn"
+                                },
+                                {
+                                    "Ref": "ArtifactoryUrl"
+                                },
+                                " ",
+                                {
+                                    "Ref": "Runmode"
+                                },
+                                " ",
+                                {
+                                    "Fn::Join": [
+                                        "",
+                                            [
+                                                {
+                                                "Fn::If" : [
+                                                    "ifFeatureBranch",
+                                                    "-feature",
+                                                    {   "Ref" : "AWS::NoValue"  }
+                                                ]
+                                                },
+                                                {
+                                                    "Fn::If" : [
+                                                        "ifReleaseBranch",
+                                                        "-release",
+                                                        {   "Ref" : "AWS::NoValue"  }
+                                                    ]
+                                                },
+                                                {
+                                                    "Ref": "BlueGreenSelection"
+                                                },
+                                                {
+                                                    "Ref": "InstancePostFixTag"
+                                                },
+                                                "-",
+                                                {
+                                                    "Ref": "AWS::Region"
+                                                }
+                                            ]
+                                    ]
+                                } ,
+                                " ",
+                                {
+                                    "Fn::Join": [
+                                      "",
+                                      [
+                                        "AEMLogs-",
+                                        {
+                                          "Ref": "AWS::StackName"
+                                        },
+                                        "-aem"
+                                      ]
+                                    ]
+                                  } 
+                            ]
+                        ]
+                    } ,
+                    "Appsg": {
+                        "Ref": "DispatcherSG"
+                    },
+                    "InstanceTagName":"aem-disp-preview",
+                    "LogGroupName": {
+                        "Ref": "AEMLogs"
+                    },
+					"Runmode": {
+                        "Ref": "Runmode"
+                    },
+                    "RandomValue": {
+                        "Ref": "RandomValue"
+                    },
+                    "MicroAccount": {
+                        "Ref": "MicroAccount"
+                    },
+                    "CFInvalidationRole": {
+                        "Ref": "CFInvalidationRole"
+                    },
+                    "NLBAccessLogS3": {
+                        "Ref": "NLBAccessLogS3"
+                    },
+                    "BlueGreenSelection": {
+                        "Ref": "BlueGreenSelection"
+                    },
+                    "SourceRoleAccount": {
+                        "Ref": "SourceRoleAccount"
+                    },
+                    "AEMSecretsRole": {
+                        "Ref": "AEMSecretsRole"
+                    },
+                    "AEMCERolename": {
+                        "Ref": "AEMCERolename"
+                    },
+                    "PreprodAccount": {
+                        "Ref": "PreprodAccount"
+                    },
+                    "PreprodAccountName": {
+                        "Ref": "PreprodAccountName"
+                    },
+                    "InstancePostfix": {
+                        "Fn::Join": [
+                            "",
+                                [
+                                    {
+                                        "Fn::If" : [
+                                            "ifFeatureBranch",
+                                            "-feature",
+                                            {   "Ref" : "AWS::NoValue"  }
+                                        ]
+                                    },
+                                    {
+                                        "Fn::If" : [
+                                            "ifReleaseBranch",
+                                            "-release",
+                                            {   "Ref" : "AWS::NoValue"  }
+                                        ]
+                                    },
+                                    {
+                                        "Ref": "BlueGreenSelection"
+                                    },
+                                    {
+                                        "Ref": "InstancePostFixTag"
+                                    },
+                                    "-",
+                                    {
+                                        "Ref": "AWS::Region"
+                                    }
+                                ]
+                        ]
+                    },
+                    "AcmCertificateArn":{
+                        "Ref": "PreviewDispatcherArn"
+                    },
+                    "AcmCertificateRegionArn":{
+                        "Ref": "MainCertificateArn"
+                    },
+                    "DispatcherCdnDistributionID": {
+                        "Ref": "DispatcherCdnDistributionID"
+                    },
+                    "BranchName": { 
+                        "Ref": "BranchName"
+                    },
+                    "EnableMultiRegion" : {
+                        "Ref": "EnableMultiRegion"
+                    },
+                    "ActiveAuthorRegion" : {
+                        "Ref": "ActiveAuthorRegion"
+                    },
+                    "BucketPostFix" : {
+                        "Ref": "BucketPostFix"
+                    },
+                    "AdminStack" : "false",
+                    "OORUSEast2" : {
+                        "Ref": "OORUSEast2"
+                    },
+                    "EnableWest2Region": {
+                        "Ref": "EnableWest2Region"
+                    },
+                    "OORUSWest2" : {
+                        "Ref": "OORUSWest2"
+                    },
+                    "EFSTargetCname" : {
+                        "Ref": "EFSTargetCname"
+                    },
+                    "EFSTargetSG" : {
+                        "Ref": "EFSTargetSG"
+                    }
+                },
+                "Tags": [ 
+                    { 
+                        "Key" : "BranchName", 
+                        "Value" : { 
+                            "Ref": "BranchName"
+                        } 
+                    } 
+                ],
+                "TemplateURL": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "https://s3.amazonaws.com/",
+                            {
+                                "Ref": "AccountName"
+                            },
+                            "-",
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            "-aem/",
+                            {
+                                "Ref": "AWS::StackName"
+                            },
+                            "/files/asgstack.json"
+                        ]
+                    ]
+                },
+                "TimeoutInMinutes": "60"
+            }
+        },
+        "PubOutboundRule": {
+            "Type": "AWS::EC2::SecurityGroupEgress",
+            "Condition" : "NotCi",
+            "Properties":{
+               "IpProtocol": "tcp",
+               "FromPort": "1080",
+               "ToPort": "1080",
+               "DestinationSecurityGroupId": {
+                  "Fn::GetAtt": [
+                     "DispatcherSG",
+                     "GroupId"
+                  ]
+               },
+               "GroupId": {
+                  "Fn::GetAtt": [
+                     "PublisherSG",
+                     "GroupId"
+                  ]
+               }
+            }
+         },
+         "PubDispInboundRule": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Condition" : "NotCi",
+            "Properties": {
+                "IpProtocol": "tcp",
+                "FromPort": "4503",
+                "ToPort": "4503",
+                "SourceSecurityGroupId": {
+                    "Fn::GetAtt": [
+                        "DispatcherSG",
+                        "GroupId"
+                    ]
+                },
+                "GroupId": {
+                    "Ref": "PublisherSG"
+                }
+            }
+        },
+        "PubAuthInboundRule": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Condition" : "NotCi",
+            "Properties": {
+                "IpProtocol": "tcp",
+                "FromPort": "4503",
+                "ToPort": "4503",
+                "SourceSecurityGroupId": {
+                    "Fn::GetAtt": [
+                        "AuthorSG",
+                        "GroupId"
+                    ]
+                },
+                "GroupId": {
+                    "Ref": "PublisherSG"
+                }
+            }
+        },
+        "DispInboundRule": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Condition" : "NotCi",
+            "Properties": {
+                "IpProtocol": "tcp",
+                "FromPort": "1080",
+                "ToPort": "1080",
+                "SourceSecurityGroupId": {
+                    "Fn::GetAtt": [
+                        "PublisherSG",
+                        "GroupId"
+                    ]
+                },
+                "GroupId": {
+                    "Ref": "DispatcherSG"
+                }
+            }
+        },
+         "AuthOutboundRule": {
+            "Type": "AWS::EC2::SecurityGroupEgress",
+            "Condition" : "NotCi",
+            "Properties":{
+               "IpProtocol": "tcp",
+               "FromPort": "4503",
+               "ToPort": "4503",
+               "DestinationSecurityGroupId": {
+                  "Fn::GetAtt": [
+                     "PublisherSG",
+                     "GroupId"
+                  ]
+               },
+               "GroupId": {
+                  "Fn::GetAtt": [
+                     "AuthorSG",
+                     "GroupId"
+                  ]
+               }
+            }
+         },
+         "DispOutboundRule": {
+            "Type": "AWS::EC2::SecurityGroupEgress",
+            "Condition" : "NotCi",
+            "Properties":{
+               "IpProtocol": "tcp",
+               "FromPort": "4503",
+               "ToPort": "4503",
+               "DestinationSecurityGroupId": {
+                  "Fn::GetAtt": [
+                     "PublisherSG",
+                     "GroupId"
+                  ]
+               },
+               "GroupId": {
+                  "Fn::GetAtt": [
+                     "DispatcherSG",
+                     "GroupId"
+                  ]
+               }
+            }
+        }
+    }
+}
